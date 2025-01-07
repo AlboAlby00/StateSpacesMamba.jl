@@ -17,20 +17,23 @@ train_images, train_labels = MNIST(split = :train)[:]
 n_train_images = size(train_images)[end]
 train_sequences = reshape(train_images, 1, 28 * 28, n_train_images)
 train_labels = repeat(train_labels', outer = (28 * 28, 1))
-train_loader = Flux.DataLoader((train_sequences, train_labels), batchsize=batch_size, shuffle=true)
+train_loader = Flux.DataLoader((train_sequences, train_labels), batchsize = batch_size, shuffle = true, partial = false)
 
+for (x, y) in train_loader
+	@assert(size(x) == (1, 28 * 28, batch_size))
+end
 
 # test loader
 test_images, test_labels = MNIST(split = :test)[:]
 n_test_images = size(test_images)[end]
 test_sequences = reshape(test_images, 28 * 28, n_test_images)
-test_loader = Flux.DataLoader((test_sequences, test_labels), batchsize=batch_size)
+test_loader = Flux.DataLoader((test_sequences, test_labels), batchsize = batch_size)
 
 model = Chain(
 	x -> reshape(x, 1, 28 * 28, batch_size),
 	LSTM(1 => hidden_size),
 	Dense(hidden_size => hidden_size, relu),
-    Dense(hidden_size => n_classes, identity),
+	Dense(hidden_size => n_classes, identity),
 ) |> device
 
 opt_state = Flux.setup(Flux.Adam(0.001), model)
@@ -40,7 +43,7 @@ losses = []
 	Flux.reset!(model)
 	progress = Progress(length(train_loader))
 	for (x, y) in train_loader
-        x, y = x |> device, y |> device
+		x, y = x |> device, y |> device
 		loss, grads = Flux.withgradient(model) do m
 			logits = m(x)
 			onehot_y = Flux.onehotbatch(y, 0:n_classes-1)
