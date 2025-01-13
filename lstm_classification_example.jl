@@ -5,9 +5,9 @@ CUDA.allowscalar(false)
 
 # hyperparameters
 n_classes = 10
-batch_size = 128
+batch_size = 64
 hidden_size = 256
-epochs = 100
+epochs = 1000
 device = gpu_device()
 
 # create split mnist dataloader
