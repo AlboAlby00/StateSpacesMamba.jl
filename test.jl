@@ -11,7 +11,8 @@ using Main.MambaLayer
 n_classes = 10
 batch_size = 64
 test_batch_size = 8
-hidden_size = 16
+hidden_dim = 128 # D in the paper
+mamba_block_dim = 16 # N in the paper
 epochs = 1000
 device = gpu_device()
 
@@ -33,16 +34,16 @@ test_images, test_labels = MNIST(split=:test)[:]
 n_test_images = size(test_images)[end]
 test_sequences = reshape(test_images, 1, 28 * 28, n_test_images)
 test_labels = repeat(test_labels', outer=(28 * 28, 1))
-test_loader = Flux.DataLoader((test_sequences, test_labels), batchsize=test_batch_size)
+test_loader = Flux.DataLoader((test_sequences, test_labels), batchsize=test_batch_size, partial=false)
 
 for (x, y) in test_loader
     @assert(size(x) == (1, 28 * 28, test_batch_size))
 end
 
 model = Chain(
-            MambaLayer.SSM(D=1, N=hidden_size, Δrank=Int(ceil(hidden_size / 4))),
-            Dense(1 => hidden_size, relu),
-            Dense(hidden_size => n_classes, identity),
+            MambaLayer.MambaBlock(input_dim=1, block_dim=mamba_block_dim, output_dim=hidden_dim),
+            Dense(hidden_dim => hidden_dim, relu),
+            Dense(hidden_dim => n_classes, identity),
         ) |> device |> f64
 
 opt_state = Flux.setup(Flux.Adam(0.001), model)
