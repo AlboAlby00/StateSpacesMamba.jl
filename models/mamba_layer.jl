@@ -3,6 +3,11 @@ module MambaLayer
 using Flux
 using CUDA
 using OMEinsum
+using Zygote
+
+include("../scan/scan.jl")
+
+# Structs definition
 
 struct SSM
     A::CuArray{Float64}
@@ -12,53 +17,8 @@ struct SSM
     project_Δ::Dense # Project Δ from Δrank to D to have the correct size to perform discretization
 end
 
-# Forward pass for SSM
-function (m::SSM)(x)
-    A = m.A
-    B = m.project_x_to_B(x)
-    C = m.project_x_to_C(x)
-    Δ = m.project_Δ(softplus(m.project_x_to_Δ(x)))
-    y = selective_scan(x, Δ, A, B, C)
-    return y  # Add more logic here if needed
-end
-
-# Constructor for MambaBlock
-function SSM(; D::Int, N::Int, Δrank::Int)
-    A = CuArray{Float64}(repeat(1:N, 1, D)') # Example initialization for A
-    project_x_to_Δ = Dense(D => Δrank)
-    project_x_to_B = Dense(D => N)
-    project_x_to_C = Dense(D => N)
-    project_Δ = Dense(Δrank => D)
-    return SSM(A, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
-end
-
-Flux.@layer SSM trainable = (A, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
-
-function complex_log(input::AbstractArray, eps::Float64=1e-12)
-    real_part = log.(max.(abs.(input), eps))
-    imaginary_part = pi .* (input .< 0)
-    return complex.(real_part, imaginary_part)
-end
-# Scan function for SSM
-# SSM equations are:
-# h′ = Ā * h + B̄ * x
-# y = C̄ * h′
-function selective_scan(x, Δ, A, B, C)
-    # discretization
-    @ein ΔA[d, n, l, b] := Δ[d, l, b] * A[d, n]
-    Ā = exp.(ΔA)
-    @ein B̄x[d, n, l, b] := Δ[d, l, b] * x[d, l, b] * B[n, l, b]
-    # scan
-    Ā_cumsum = cumsum(Ā, dims=3) # cumulative sums on the l dimension
-    temp = B̄x ./ (Ā_cumsum .+ 1e-12)
-    h′ = cumsum(temp, dims=3) .* Ā_cumsum
-    @ein y[d, l, b] := h′[d, n, l, b] * C[n, l, b]
-    return y
-
-end
-
 struct MambaBlock
-    # norm::LayerNorm
+    norm::LayerNorm
     project_input::Dense
     project_res::Dense
     conv1d::Conv
@@ -66,14 +26,39 @@ struct MambaBlock
     project_output::Dense
 end
 
-function MambaBlock(; input_dim=1, block_dim=64, output_dim=1, kernel_size=5) # IMPORTANT! kernel_size must be odd, otherwise conv1d input D != output D
-    # norm = LayerNorm(inp)
+struct MambaArgs
+    input_dim::Int
+    output_dim::Int
+    n_layers::Int
+    D::Int
+    N::Int
+    kernel_size::Int
+end
+
+
+function MambaArgs(in, out; D=32, n_layers=2, N=16, kernel_size=5)
+    @assert kernel_size % 2 == 1 "kernel size must be a odd integer"
+    return MambaArgs(in, out, n_layers, D, N, kernel_size)
+end
+
+function Mamba(args::MambaArgs)
+    model = Chain(
+        Dense(args.input_dim => args.D),
+        MambaBlock(input_dim=args.D, block_dim=args.N, output_dim=args.D),
+        Dense(args.D => args.output_dim),
+    )
+    return model
+end
+
+# Constructor for MambaBlock
+function MambaBlock(; input_dim=1, block_dim=16, output_dim=1, kernel_size=5) # IMPORTANT! kernel_size must be odd, otherwise conv1d input D != output D
+    norm = LayerNorm(input_dim)
     project_input = Dense(input_dim => block_dim)
     project_res = Dense(input_dim => block_dim)
     conv1d = Conv((kernel_size,), block_dim => block_dim, relu, pad=(Int((kernel_size - 1) / 2),)) # pad defined so that input D == output D
-    ssm = SSM(D=block_dim, N=block_dim, Δrank=Int(ceil(block_dim / 4)))
+    ssm = SSM(D=block_dim, N=block_dim, Δrank=Int(ceil(input_dim / 16)))
     project_output = Dense(block_dim => output_dim)
-    return MambaBlock(project_input, project_res, conv1d, ssm, project_output)
+    return MambaBlock(norm, project_input, project_res, conv1d, ssm, project_output)
 end
 
 # Forward pass for MambaBlock
@@ -96,5 +81,27 @@ function (m::MambaBlock)(x)
 end
 
 Flux.@layer MambaBlock trainable = (project_input, project_res, conv1d, ssm, project_output)
+
+# Forward pass for SSM
+function (m::SSM)(x)
+    A = m.A
+    B = m.project_x_to_B(x)
+    C = m.project_x_to_C(x)
+    Δ = m.project_Δ(softplus(m.project_x_to_Δ(x)))
+    y = associative_selective_scan(x, Δ, A, B, C)
+    return y  # Add more logic here if needed
+end
+
+# Constructor for SSM
+function SSM(; D::Int, N::Int, Δrank::Int)
+    A = log.((repeat(1:N, 1, D)'))
+    project_x_to_Δ = Dense(D => Δrank)
+    project_x_to_B = Dense(D => N)
+    project_x_to_C = Dense(D => N)
+    project_Δ = Dense(Δrank => D)
+    return SSM(A, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
+end
+
+Flux.@layer SSM trainable = (A, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
 
 end  # End of module
