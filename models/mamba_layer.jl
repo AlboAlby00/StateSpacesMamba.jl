@@ -10,7 +10,7 @@ include("../scan/scan.jl")
 # Structs definition
 
 struct SSM
-    A::CuArray{Float64}
+    A::AbstractArray
     project_x_to_Δ::Dense
     project_x_to_B::Dense
     project_x_to_C::Dense
@@ -53,7 +53,7 @@ end
 # Constructor for MambaBlock
 function MambaBlock(; input_dim=1, block_dim=16, output_dim=1, kernel_size=5) # IMPORTANT! kernel_size must be odd, otherwise conv1d input D != output D
     norm = LayerNorm(input_dim)
-    project_input = Dense(input_dim => block_dim)
+    project_input = Dense(input_dim => block_dim, Float64)
     project_res = Dense(input_dim => block_dim)
     conv1d = Conv((kernel_size,), block_dim => block_dim, relu, pad=(Int((kernel_size - 1) / 2),)) # pad defined so that input D == output D
     ssm = SSM(D=block_dim, N=block_dim, Δrank=Int(ceil(input_dim / 16)))
@@ -94,7 +94,7 @@ end
 
 # Constructor for SSM
 function SSM(; D::Int, N::Int, Δrank::Int)
-    A = log.((repeat(1:N, 1, D)'))
+    A = (log.((repeat(1:N, 1, D)'))) 
     project_x_to_Δ = Dense(D => Δrank)
     project_x_to_B = Dense(D => N)
     project_x_to_C = Dense(D => N)

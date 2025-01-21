@@ -16,7 +16,10 @@ function selective_scan(x, Δ, A, B, C)
     d, l, b = size(x)
     n = size(A, 2)
     
-    Ā, B̄x = discretize(x, Δ, A, B)
+    # discretization
+    @ein log_Ā[d, n, l, b] := Δ[d, l, b] * A[d, n]
+    Ā = exp.(log_Ā)
+    @ein B̄x[d, n, l, b] := Δ[d, l, b] * x[d, l, b] * B[n, l, b]
 
     # scan
     y_stack = Zygote.Buffer(copy(x))
@@ -33,7 +36,9 @@ end
 function associative_selective_scan(x, Δ, A, B, C; mode=:logcumsumexp)
 
     # discretization
-    Ā, B̄x = discretize(x, Δ, A, B)
+    @ein log_Ā[d, n, l, b] := Δ[d, l, b] * A[d, n]
+    Ā = exp.(log_Ā)
+    @ein B̄x[d, n, l, b] := Δ[d, l, b] * x[d, l, b] * B[n, l, b]
 
     if mode == :cumsum
         Ā_cumsum = cumsum(Ā, dims=3) # cumulative sums on the l dimension
@@ -42,8 +47,8 @@ function associative_selective_scan(x, Δ, A, B, C; mode=:logcumsumexp)
         @ein y[d, l, b] := h′[d, n, l, b] * C[n, l, b]
     elseif mode == :logcumsumexp
         B̄x_log = complex_log(B̄x)
-        Ā_cumsum = cumsum(Ā, dims=3) # cumulative sums on the l dimension
-        h_log = cumsum(B̄x_log - Ā_cumsum, dims=3) + Ā_cumsum
+        log_Ā_cumsum = cumsum(log_Ā, dims=3) # cumulative sums on the l dimension
+        h_log = logcumsumexp(B̄x_log - log_Ā_cumsum, dims=3) + log_Ā_cumsum
         h = exp.(real.(h_log))
         @ein y[d, l, b] := h[d, n, l, b] * C[n, l, b]
     end

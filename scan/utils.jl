@@ -1,4 +1,8 @@
-using Base: cumsum!
+using Base: add_sum
+using OMEinsum
+using ChainRulesCore
+using Zygote
+import ChainRulesCore: rrule
 
 function complex_log(input::AbstractArray, eps::Float64=1e-12)
     real_part = log.(max.(abs.(input), eps))
@@ -6,15 +10,23 @@ function complex_log(input::AbstractArray, eps::Float64=1e-12)
     complex.(real_part, imaginary_part)
 end
 
-function mylogcumsumexp(A::AbstractArray{T}; dims::Integer) where T
-    out = similar(A, promote_op(add_sum, T, T))
-    cumsum!(out, A, dims=dims)
-    return out
+function logsumexp_op(x, y)
+    max_val = max(real(x), real(y))
+    log(exp(x - max_val) + exp(y - max_val)) + max_val
 end
 
-function discretize(x, Δ, A, B)
-    @ein ΔA[d, n, l, b] := Δ[d, l, b] * A[d, n]
-    Ā = exp.(ΔA)
-    @ein B̄x[d, n, l, b] := Δ[d, l, b] * x[d, l, b] * B[n, l, b]
-    return Ā, B̄x
+function logcumsumexp(A::AbstractArray; dims::Integer)
+    accumulate(logsumexp_op, A, dims=dims)
 end
+
+function rrule(::typeof(logcumsumexp), x::AbstractArray{T,N}; dims::Integer) where {T,N}
+    function logcumsumexp_pullback(dy)
+        project = ProjectTo(x)
+        exp_x = exp.(x)
+        res1 = reverse(dy, dims=dims) ./ reverse(cumsum(exp_x, dims=dims), dims=dims)
+        res2 = reverse(cumsum(res1, dims=dims), dims=dims) .* exp_x
+        return (NoTangent(), project(res2))
+    end
+    return logcumsumexp(x; dims=dims), logcumsumexp_pullback
+end
+rrule(::typeof(logcumsumexp), x::AbstractArray{T,N})  where {T,N} = rrule(logcumsumexp, x; dims=1)
