@@ -10,7 +10,7 @@ include("../scan/scan.jl")
 # Structs definition
 
 struct SSM
-    A::AbstractArray
+    LogA::AbstractArray
     project_x_to_Δ::Dense
     project_x_to_B::Dense
     project_x_to_C::Dense
@@ -29,43 +29,43 @@ end
 struct MambaArgs
     input_dim::Int
     output_dim::Int
+    mamba_block_output_dim::Int
     n_layers::Int
-    D::Int
     N::Int
+    D::Int
     kernel_size::Int
 end
 
 
-function MambaArgs(in, out; D=32, n_layers=2, N=16, kernel_size=5)
+function MambaArgs(in, out; mamba_block_output_dim=16, n_layers=3, N=16, expand=16, kernel_size=5)
     @assert kernel_size % 2 == 1 "kernel size must be a odd integer"
-    return MambaArgs(in, out, n_layers, D, N, kernel_size)
+    return MambaArgs(in, out, mamba_block_output_dim, n_layers, N, expand * in, kernel_size)
 end
 
 function Mamba(args::MambaArgs)
     model = Chain(
-        Dense(args.input_dim => args.D),
-        MambaBlock(input_dim=args.D, block_dim=args.N, output_dim=args.D),
-        Dense(args.D => args.output_dim),
+        MambaBlock(args.input_dim, args.mamba_block_output_dim, D=args.D, N=args.N),
+        [MambaBlock(args.mamba_block_output_dim, args.mamba_block_output_dim, D=args.D, N=args.N) for _ in 1:args.n_layers-1]...,
+        Dense(args.mamba_block_output_dim => args.output_dim)
     )
     return model
 end
 
 # Constructor for MambaBlock
-function MambaBlock(; input_dim=1, block_dim=16, output_dim=1, kernel_size=5) # IMPORTANT! kernel_size must be odd, otherwise conv1d input D != output D
+function MambaBlock(input_dim, output_dim; D=64, N=16, kernel_size=5) # IMPORTANT! kernel_size must be odd, otherwise conv1d input D != output D
     norm = LayerNorm(input_dim)
-    project_input = Dense(input_dim => block_dim, Float64)
-    project_res = Dense(input_dim => block_dim)
-    conv1d = Conv((kernel_size,), block_dim => block_dim, relu, pad=(Int((kernel_size - 1) / 2),)) # pad defined so that input D == output D
-    ssm = SSM(D=block_dim, N=block_dim, Δrank=Int(ceil(input_dim / 16)))
-    project_output = Dense(block_dim => output_dim)
+    project_input = Dense(input_dim => D)
+    project_res = Dense(input_dim => D)
+    conv1d = Conv((kernel_size,), D => D, relu, pad=(Int((kernel_size - 1) / 2),)) # pad defined so that input D == output D
+    ssm = SSM(D=D, N=N, Δrank=max(1, D ÷ 2))
+    project_output = Dense(D => output_dim)
     return MambaBlock(norm, project_input, project_res, conv1d, ssm, project_output)
 end
 
 # Forward pass for MambaBlock
 function (m::MambaBlock)(x)
-    # out_norm = m.norm(x)
+    #out_norm = m.norm(x)
     out_project = m.project_input(x)
-
     # Conv layer requires size l, d, b but out_project size is d, l, b. We need to permute the dims
     out_project = permutedims(out_project, (2, 1, 3)) # permute l and d
     out_conv = swish(m.conv1d(out_project))
@@ -84,24 +84,24 @@ Flux.@layer MambaBlock trainable = (project_input, project_res, conv1d, ssm, pro
 
 # Forward pass for SSM
 function (m::SSM)(x)
-    A = m.A
+    A = -exp.(m.LogA)
     B = m.project_x_to_B(x)
     C = m.project_x_to_C(x)
-    Δ = m.project_Δ(softplus(m.project_x_to_Δ(x)))
+    Δ = softplus(m.project_Δ(relu(m.project_x_to_Δ(x))))
     y = associative_selective_scan(x, Δ, A, B, C)
-    return y  # Add more logic here if needed
+    return y
 end
 
 # Constructor for SSM
 function SSM(; D::Int, N::Int, Δrank::Int)
-    A = (log.((repeat(1:N, 1, D)'))) 
+    LogA = log.((repeat(1:N, 1, D)'))
     project_x_to_Δ = Dense(D => Δrank)
     project_x_to_B = Dense(D => N)
     project_x_to_C = Dense(D => N)
     project_Δ = Dense(Δrank => D)
-    return SSM(A, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
+    return SSM(LogA, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
 end
 
-Flux.@layer SSM trainable = (A, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
+Flux.@layer SSM trainable = (LogA, project_x_to_Δ, project_x_to_B, project_x_to_C, project_Δ)
 
 end  # End of module
