@@ -22,8 +22,10 @@ end
 function rrule(::typeof(logcumsumexp), x::AbstractArray{T,N}; dims::Integer) where {T,N}
     function logcumsumexp_pullback(dy)
         project = ProjectTo(x)
+        x_max = maximum(real(x); dims=dims)
         exp_x = exp.(x)
-        res1 = reverse(dy, dims=dims) ./ reverse(cumsum(exp_x, dims=dims), dims=dims)
+        cumsum_exp = cumsum(exp.(x .- x_max), dims=dims) .* exp.(x_max)
+        res1 = reverse(dy, dims=dims) ./ reverse(cumsum_exp, dims=dims)
         res2 = reverse(cumsum(res1, dims=dims), dims=dims) .* exp_x
         return (NoTangent(), project(res2))
     end
