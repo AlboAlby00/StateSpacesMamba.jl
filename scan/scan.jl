@@ -40,21 +40,20 @@ function associative_selective_scan(x, Δ, A, B, C; mode=:cumsum)
     # discretization
     @ein Ā[d, n, l, b] := Δ[d, l, b] * A[d, n]
     @ein B̄x[d, n, l, b] := Δ[d, l, b] * x[d, l, b] * B[n, l, b]
-    # Ā = max.(-20, Ā)
 
-    if mode == :cumsum
-        temp = Flux.pad_zeros(Ā[:,:,2:end,:],(0,0,0,0,1,0,0,0))
-        Ā_cumsum = exp.(cumsum(temp, dims=3)) # cumulative sums on the l dimension
-        temp = Float32.(B̄x ./ (Ā_cumsum .+ 1e-12))
-        h′ = cumsum(temp, dims=3) .* Ā_cumsum
-        @ein y[d, l, b] := h′[d, n, l, b] * C[n, l, b]
-    elseif mode == :logcumsumexp
-        B̄x_log = complex_log(B̄x)
-        Ā_cumsum = cumsum(Ā, dims=3) # cumulative sums on the l dimension
-        h_log = logcumsumexp(B̄x_log - Ā_cumsum, dims=3) + Ā_cumsum
-        h = exp.(real.(h_log)) .* cos.(imag.(h_log))
-        @ein y[d, l, b] := h[d, n, l, b] * C[n, l, b]
-    end
+    temp = Flux.pad_zeros(Ā[:,:,2:end,:],(0,0,0,0,1,0,0,0))
+    Ā_cumsum = exp.(cumsum(temp, dims=3)) # cumulative sums on the l dimension
+    temp = Float32.(B̄x ./ (Ā_cumsum .+ 1e-12))
+    h′ = cumsum(temp, dims=3) .* Ā_cumsum
+    @ein y[d, l, b] := h′[d, n, l, b] * C[n, l, b]
 
     return y
 end
+
+#= elseif mode == :logcumsumexp
+    B̄x_log = complex_log(B̄x)
+    Ā_cumsum = cumsum(Ā, dims=3) # cumulative sums on the l dimension
+    h_log = logcumsumexp(B̄x_log - Ā_cumsum, dims=3) + Ā_cumsum
+    h = exp.(real.(h_log)) .* cos.(imag.(h_log))
+    @ein y[d, l, b] := h[d, n, l, b] * C[n, l, b]
+end =#

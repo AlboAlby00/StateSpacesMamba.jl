@@ -38,7 +38,7 @@ end
 
 Flux.@layer TransformerGPT
 
-function TransformerGPT(alphabet::AbstractVector{Char}, seq_len; n_embed=64, n_hidden=256, qk_dim=16, v_dim=16, n_heads=4, dropout=0.0)
+function TransformerGPT(alphabet::AbstractVector{Char}, seq_len; n_embed=64, n_hidden=256,  n_layers=3, qk_dim=16, v_dim=16, n_heads=4, dropout=0.0)
     n_vocab = length(alphabet)
     TransformerGPT(
         alphabet,
