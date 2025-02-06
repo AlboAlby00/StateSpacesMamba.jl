@@ -10,7 +10,7 @@ using Revise
 include("models/mamba.jl")
 include("utils/common.jl")
 using .MambaLayer
-Revise.track("models/mamba_layer.jl")
+Revise.track("models/mamba.jl")
 
 # hyperparameters
 train_batch_size = 64
@@ -18,20 +18,20 @@ test_batch_size = 64
 epochs = 1000
 device = gpu_device()
 lr = 0.001
-model_name = "mamba"
+model_name = "transformer"
 
 n_classes = 10
 input_dim = 1
 
 lstm_hidden_size = 128
 
-n_layers = 2
-mamba_block_output_dim = 32
-expand = 64÷input_dim
-N = 8
+n_layers = 3
+mamba_block_output_dim = 128
+expand = 128÷input_dim
+N = 16
 
 models = Dict(
-    "transformer" => Chain(
+    "lstm" => Chain(
         LSTM(input_dim => lstm_hidden_size),
         SkipConnection(LSTM(lstm_hidden_size => lstm_hidden_size), +),
         SkipConnection(LSTM(lstm_hidden_size => lstm_hidden_size), +),

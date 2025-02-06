@@ -14,21 +14,21 @@ include("./ssm.jl")
 
 export Mamba, MambaGPT
 
-function Mamba(in, out; mamba_block_output_dim=64, n_layers=3, N=16, expand=16, kernel_size=5)
+function Mamba(in, out; mamba_block_output_dim=64, n_layers=3, N=16, expand=16, kernel_size=5, dropout=0.0)
     @assert kernel_size % 2 == 1 "kernel size must be a odd integer"
     model = Chain(
-        MambaBlock(in, mamba_block_output_dim, D=expand*in, N=N),
-        [SkipConnection(MambaBlock(mamba_block_output_dim, mamba_block_output_dim, D=expand*in, N=N),+) for _ in 1:n_layers-1]...,
+        MambaBlock(in, mamba_block_output_dim, D=expand*in, N=N, dropout=dropout),
+        [SkipConnection(MambaBlock(mamba_block_output_dim, mamba_block_output_dim, D=expand*in, N=N, dropout=dropout),+) for _ in 1:n_layers-1]...,
         Dense(mamba_block_output_dim => out)
     )
     return model
 end
 
-function MambaGPT(vocab_size; embed_dim=128, n_layers=3, N=16, expand=2, kernel_size=5)
+function MambaGPT(vocab_size; embed_dim=128, n_layers=3, N=16, expand=2, kernel_size=5, dropout=0.0)
     @assert kernel_size % 2 == 1 "kernel size must be a odd integer"
     model = Chain(
         Embedding(vocab_size, embed_dim),
-        [SkipConnection( MambaBlock(embed_dim, embed_dim, D=vocab_size*expand, N=N), +) for _ in 1:n_layers-1]...,
+        [SkipConnection( MambaBlock(embed_dim, embed_dim, D=vocab_size*expand, N=N, dropout=dropout), +) for _ in 1:n_layers-1]...,
         Dense(embed_dim => vocab_size)
     )
     return model
@@ -42,10 +42,11 @@ struct MambaBlock
     causalConv1d::Conv
     ssm::SSM
     project_output::Dense
+    dropout::Dropout
 end
 
 # Constructor for MambaBlock
-function MambaBlock(input_dim, output_dim; D=64, N=16, kernel_size=5) 
+function MambaBlock(input_dim, output_dim; D=64, N=16, kernel_size=5, dropout=0.0) 
     norm = LayerNorm(input_dim, relu)
     project_input = Dense(input_dim => D)
     project_res = Dense(input_dim => D)
@@ -53,7 +54,8 @@ function MambaBlock(input_dim, output_dim; D=64, N=16, kernel_size=5)
     causalConv1d = Conv((kernel_size,), D => D, relu, pad=(kernel_size - 1, 0)) 
     ssm = SSM(D=D, N=N, Δrank=max(1, D ÷ 2))
     project_output = Dense(D => output_dim)
-    return MambaBlock(norm, project_input, project_res, causalConv1d, ssm, project_output)
+    dropout = Dropout(dropout)
+    return MambaBlock(norm, project_input, project_res, causalConv1d, ssm, project_output, dropout)
 end
 
 # Forward pass for MambaBlock
@@ -75,7 +77,9 @@ function (m::MambaBlock)(x)
     # inner residual connection
     out_res = out_ssm .+ swish(m.project_res(x))
 
-    out = m.project_output(out_res)
+    out_drop = m.dropout(out_res)
+
+    out = m.project_output(out_drop)
 
     return out
 end

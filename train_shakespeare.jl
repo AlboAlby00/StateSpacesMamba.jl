@@ -5,12 +5,12 @@ using CUDA
 using Revise
 using Plots
 using DelimitedFiles
+using BSON
 
 CUDA.allowscalar(false)
 
 include("models/mamba.jl")
 include("models/transformer.jl")
-include("parser.jl")
 include("utils/shakespeare.jl")
 include("utils/common.jl")
 using Main.MambaLayer
@@ -20,9 +20,13 @@ device = gpu_device()
 train_batch_size = 128
 test_batch_size = 64
 embed_dim = 256
-model_name = "mamba"
-seq_len = 90
+model_name = "mamba_with_dropout"
+seq_len = 128
 save_csv = true
+save_model = true
+
+best_model = nothing
+best_test_loss = Inf
 
 alphabet, trainX, trainY, testX, testY = get_tiny_shakespeare(seq_len=seq_len)
 vocab_size = length(alphabet)
@@ -34,7 +38,8 @@ vocab_size = length(alphabet)
 
 models = Dict(
     "transformer" => TransformerGPT(alphabet, seq_len, n_embed=embed_dim),
-    "mamba" => MambaLayer.MambaGPT(vocab_size, embed_dim = embed_dim, N = 16, n_layers=3 )
+    "mamba" => MambaLayer.MambaGPT(vocab_size, embed_dim = embed_dim, N = 16, n_layers=3),
+    "mamba_with_dropout" => MambaLayer.MambaGPT(vocab_size, embed_dim = embed_dim, N = 16, n_layers=3, dropout=0.1)
 )
 model = models[model_name] |> f32 |> device
 
@@ -50,8 +55,14 @@ function criterion(logits, y)
     Flux.Losses.logitcrossentropy(logits, y)
 end
 
-num_epochs = 10
+test_losses = []
+train_losses = []
+
+num_epochs = 100
 @showprogress for epoch in 1:num_epochs
+
+    global best_test_loss
+    global best_model
 
     # Validation loop
     Flux.testmode!(model)
@@ -67,9 +78,15 @@ num_epochs = 10
 
         next!(test_progress; showvalues=[("Epoch ", epoch), ("Test Loss ", mean(losses))])
     end
-    push!(test_losses, mean(losses))
+    epoch_test_loss = mean(losses)
+    push!(test_losses, epoch_test_loss)
 
-    println(generate(model, alphabet, "Before", 50, embed_dim))
+    if epoch_test_loss < best_test_loss
+        best_test_loss = epoch_test_loss
+        best_model = deepcopy(model)  # Save a copy of the best model
+    end
+
+    println(generate(model, alphabet, "KING: ", 200, seq_len))
 
     # Training loop
     Flux.trainmode!(model)
@@ -94,7 +111,10 @@ num_epochs = 10
 end
 
 if save_csv
-    writedlm( "saved_csv/train_losses_$model_name.csv",  train_losses, ',')
-    writedlm( "saved_csv/test_losses_$model_name.csv",  test_losses, ',')
+    save_losses(model_name, train_losses, test_losses)
+end
+
+if save_model
+    save_model_weights(best_model, model_name)
 end
 
