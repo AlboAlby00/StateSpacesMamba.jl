@@ -1,9 +1,3 @@
-using Base: add_sum
-using OMEinsum
-using ChainRulesCore
-using Zygote
-import ChainRulesCore: rrule
-
 function complex_log(input::AbstractArray, eps::Float64=1e-12)
     real_part = log.(max.(abs.(input), eps))
     imaginary_part = pi * (input .< 0)

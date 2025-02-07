@@ -1,6 +1,5 @@
 using Flux
 using CUDA
-using OMEinsum
 using Zygote
 
 struct SSM

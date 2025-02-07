@@ -1,9 +1,3 @@
-using OMEinsum
-using Flux
-using GPUArrays
-import Base: promote_op, add_sum, cumsum!
-
-
 # op(x, y) = x + y
 # GPUArrays.neutral_element(::typeof(op), ::Type{T}) where T = zero(T)
 
@@ -11,6 +5,9 @@ import Base: promote_op, add_sum, cumsum!
 # SSM equations are:
 # h′ = Ā * h + B̄ * x
 # y = C̄ * h′
+using Flux
+using OMEinsum
+
 function selective_scan(x, Δ, A, B, C)
     d, l, b = size(x)
     n = size(A, 2)
@@ -19,6 +16,7 @@ function selective_scan(x, Δ, A, B, C)
     @ein log_Ā[d, n, l, b] := Δ[d, l, b] * A[d, n]
     Ā = exp.(log_Ā)
     @ein B̄x[d, n, l, b] := Δ[d, l, b] * x[d, l, b] * B[n, l, b]
+    Ā = clamp.(Ā, -20, Inf)
 
     # scan
     y_stack = Zygote.Buffer(copy(x))

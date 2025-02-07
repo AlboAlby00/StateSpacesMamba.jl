@@ -1,3 +1,5 @@
+using Flux
+
 struct GPTBlock
     layernorm1::LayerNorm
     mha::MultiHeadAttention
