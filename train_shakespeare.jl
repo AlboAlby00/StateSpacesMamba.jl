@@ -6,6 +6,7 @@ CUDA.allowscalar(false)
 include("utils/shakespeare.jl")
 include("utils/common.jl")
 include("utils/models_dict.jl")
+include("models/bayesian_mamba.jl")
 
 device = gpu_device()
 
@@ -34,9 +35,10 @@ function train_and_evaluate(model_name, train_batch_size=64, test_batch_size=64,
 
     test_losses = []
     train_losses = []
+    loss_moving_avg = 6.0  # Initialize loss moving average
 
     for epoch in 1:num_epochs
-        global best_test_loss, best_model
+        global best_test_loss, best_model, loss_moving_avg
 
         # Adjust learning rate
         new_lr = initial_lr * lr_decay_factor^(epoch - 1)
@@ -65,7 +67,7 @@ function train_and_evaluate(model_name, train_batch_size=64, test_batch_size=64,
 
         # Training loop
         Flux.trainmode!(model)
-        loss_moving_avg = 6.0  # Initialize loss moving average
+        
         α = 0.05
         train_progress = Progress(length(train_loader), desc="Training Epoch $epoch")
         for (x, y) in train_loader

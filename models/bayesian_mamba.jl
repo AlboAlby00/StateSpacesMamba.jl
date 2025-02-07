@@ -10,7 +10,6 @@ function softplus(x)
 end
 
 function inverse_softplus(y)
-    @assert all(x .>= 0.0) "Input must be non-negative"
 	return log.(exp.(y) .- 1)
 end
 
@@ -19,11 +18,8 @@ function log_gaussian_prob(x, mu, sigma)
 end
 
 function gaussian_prob(x, mu, sigma)
-    @assert all(sigma .> 0.0) "Sigma must be non-negative"
 	scaling = 1 ./ (sqrt.(2 * Float32(π) .* sigma .^ 2 ))
 	bell = exp.(-(x .- mu).^2 / (2 .* sigma .^ 2 ) )
-    @assert all(isfinite, scaling) "Scaling contains Inf or NaN!"
-    @assert all(isfinite, bell) "Bell function contains Inf or NaN!"
 	return scaling .* bell
 end
 
@@ -45,10 +41,9 @@ end
 
 function log_prob(prior::GaussianMixturePrior, model_params)
 	log_probs = [
-		sum(log.(prior.alpha .* gaussian_prob(model_param, 0, sigma_1) .+ prior.one_minus_alpha .* gaussian_prob(model_param, 0, sigma_2)))
-		for (model_param, sigma_1, sigma_2) in zip(model_params, prior.sigma_1, prior.sigma_2)
+		sum(log.(prior.alpha .* gaussian_prob(model_param, 0, prior.sigma_1) .+ prior.one_minus_alpha .* gaussian_prob(model_param, 0, prior.sigma_2)))
+		for model_param in model_params
 	]
-    println(log_probs)
 	total_log_prob = sum(log_probs)
 end
 
@@ -85,25 +80,26 @@ function log_prob(posterior::VariationalPosterior, model_params)
 end
 
 function sample_model_params(posterior::VariationalPosterior)
-	model_params = []
-	for (var_μ, var_ρ) in zip(posterior.var_μ_array, posterior.var_ρ_array)
+
+	model_params = Vector{Array{Float32}}(undef, length(posterior.var_μ_array))  
+	for i in eachindex(posterior.var_μ_array)
+		var_μ, var_ρ = posterior.var_μ_array[i], posterior.var_ρ_array[i]
 		σ = softplus(var_ρ)
-		model_param = var_μ .+ σ .* randn(Float32, size(var_μ))
-		push!(model_params, model_param)
+		model_params[i] = var_μ .+ σ .* randn(Float32, size(var_μ))  # Assign sampled values
 	end
 	return model_params
 end
 
-function bayes_by_backprop_loss(posterior::VariationalPosterior, prior, sampled_params, ŷ, y; log_likelihood = logitcrossentropy)
-    neg_log_likelihood = log_likelihood(ŷ, y)
-    prior_log_prob = sum(log_prob(prior, sampled_params))
-    var_posterior_log_prob = sum(log_prob(posterior, sampled_params))
-    kl_loss = var_posterior_log_prob - prior_log_prob
+function bayes_by_backprop_loss(posterior::VariationalPosterior, prior, sampled_params, logits, y)
+	neg_log_likelihood = logitcrossentropy(logits, y)
+    prior_log_prob = log_prob(prior, sampled_params)
+    var_posterior_log_prob = log_prob(posterior, sampled_params)
+    kl_loss = var_posterior_log_prob .- prior_log_prob
     num_batches = size(y)[end]
-    var_loss = neg_log_likelihood + kl_loss / num_batches
+    var_loss = neg_log_likelihood .+ kl_loss ./ num_batches
 end
 
-model = MambaGPT(128) |> f32
+#= model = MambaGPT(128) |> f32
 posterior = VariationalPosterior(model)
 prior = GaussianMixturePrior(0.75, 0.001, 0.75)
 
@@ -114,5 +110,5 @@ y = model(x)
 ŷ = Flux.onehotbatch(rand(1:128, 16, 32), 1:128)
 
 bayes_by_backprop_loss(posterior, prior, sampled_params, ŷ, y)
-
+ =#
 

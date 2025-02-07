@@ -9,4 +9,5 @@ models = Dict(
     "transformer_small" => TransformerGPT(alphabet, seq_len, n_embed=256, n_layers=3),
     "mamba_small" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers=3),
     "mamba_small_with_dropout" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers=3, dropout=0.1),
+    "bayesian_mamba" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers=3)
 )

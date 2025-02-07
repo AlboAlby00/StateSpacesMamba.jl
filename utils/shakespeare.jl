@@ -1,6 +1,6 @@
 using StatsBase
 
-function get_tiny_shakespeare(; seq_len=64, test_percent=0.2)
+function get_tiny_shakespeare(; seq_len=64, test_percent=0.2, data_to_use_percent=1)
     isfile("download/input.txt") || download(
         "https://cs.stanford.edu/people/karpathy/char-rnn/shakespeare_input.txt",
         "download/input.txt",
@@ -12,6 +12,8 @@ function get_tiny_shakespeare(; seq_len=64, test_percent=0.2)
 
     alphabet = [unique(text)..., '_']
     stop = alphabet[end]
+
+    text = text[1:floor(Int, length(text)*data_to_use_percent)]
 
     B = (length(text)-1) ÷ seq_len
     Xs = reshape(collect(text)[1:B*seq_len], seq_len, B)
