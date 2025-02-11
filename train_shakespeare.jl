@@ -19,6 +19,7 @@ function train_and_evaluate(experiment, hp)
     test_loader = Flux.DataLoader((testX, testY), batchsize=hp["test_batch_size"], shuffle=false, partial=false) |> device
 
     model = get_model(alphabet, hp) |> f32 |> device
+    println("model for experiment '$experiment' has $(count_params(model)) parameters)")
 
     lr_decay_factor = (hp["final_lr"] / hp["initial_lr"])^(1 / hp["num_epochs"])
     opt = Optimisers.Adam(hp["initial_lr"])
@@ -84,8 +85,9 @@ end
 
 
 small_mamba_experiments = ["small_mamba_with_standard_dropout", "small_mamba_with_ssm_dropout", "small_mamba", "small_mamba_with_both_dropout"]
+mamba_experiments = ["mamba_with_standard_dropout", "mamba_with_ssm_dropout", "mamba", "mamba_with_both_dropout"]
 # Run for multiple models
-for experiment in small_mamba_experiments
+for experiment in mamba_experiments
     params = YAML.load_file("experiments/$experiment.yaml")
     train_and_evaluate(experiment, params)
 end

@@ -1,4 +1,4 @@
-using CUDA, Enzyme, Random, Zygote
+using CUDA, Enzyme, Random, Zygote, Flux
 using Zygote: @nograd
 import Flux: testmode!, trainmode!
 
@@ -11,7 +11,7 @@ function _s4d_real_dropout_kernel(x, mask, default_LogA_init)
 end
 
 @nograd function create_mask(p, size_x)
-    return CUDA.rand(Float32, size_x) .> p
+    return CUDA.rand(Float32, size_x) .>= p
 end
 
 mutable struct S4DRealDropout
@@ -22,8 +22,7 @@ end
 
 Flux.@layer S4DRealDropout trainable=()
 
-testmode!(m::S4DRealDropout, mode=true) = (m.active = false)
-trainmode!(m::S4DRealDropout, mode=true) = (m.active = true)
+testmode!(m::S4DRealDropout, mode=true) = (m.active = !mode)
 
 function S4DRealDropout(p, n; active=nothing)
     @assert 0 ≤ p ≤ 1
@@ -40,16 +39,23 @@ function (m::S4DRealDropout)(x)
 end
 
 #= n = 16
-x = zeros(Float32, (4, n)) |> gpu_device()
+x_s4d = ones(Float32, (4, n)) |> gpu_device()
+x = ones(Float32, (4, n))
 
-dropout = S4DRealDropout(0.5, n)
+dropout_s4d = S4DRealDropout(0.5, n)
+dropout = Dropout(0.5)
 
+testmode!(dropout_s4d)
 testmode!(dropout)
-y = dropout(x)
-println(y)
+y_s4d = dropout_s4d(x_s4d)
+y = dropout(y)
+println(y_s4d)
+trainmode!(dropout_s4d)
 trainmode!(dropout)
-y = dropout(x)
+y_s4d = dropout_s4d(x_s4d)
+y = dropout(y)
+println(y_s4d)
 println(y)
-dx = Zygote.gradient(x -> sum(dropout(x)), x) =#
-
+dx_s4d = Zygote.gradient(x -> sum(dropout_s4d(x)), x_s4d)
+ =#
 
