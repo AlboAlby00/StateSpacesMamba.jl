@@ -2,7 +2,7 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "acb752f445eb4716b2064454fe6b703d0aa701e6"
+project_hash = "9d77194983d0efb3088297474838692d70b468ca"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -257,16 +257,12 @@ deps = ["AbstractFFTs", "Adapt", "BFloat16s", "CEnum", "CUDA_Driver_jll", "CUDA_
 git-tree-sha1 = "e0725a467822697171af4dae15cec10b4fc19053"
 uuid = "052768ef-5323-5732-b1bb-66c8b64840ba"
 version = "5.5.2"
+weakdeps = ["ChainRulesCore", "EnzymeCore", "SpecialFunctions"]
 
     [deps.CUDA.extensions]
     ChainRulesCoreExt = "ChainRulesCore"
     EnzymeCoreExt = "EnzymeCore"
     SpecialFunctionsExt = "SpecialFunctions"
-
-    [deps.CUDA.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
-    SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
 [[deps.CUDA_Driver_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -579,6 +575,36 @@ version = "0.1.1"
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 version = "1.6.0"
+
+[[deps.Enzyme]]
+deps = ["CEnum", "EnzymeCore", "Enzyme_jll", "GPUCompiler", "LLVM", "Libdl", "LinearAlgebra", "ObjectFile", "PrecompileTools", "Preferences", "Printf", "Random", "SparseArrays"]
+git-tree-sha1 = "ff85c59fd11d0b3736685dca0007e64857cb176f"
+uuid = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+version = "0.13.30"
+weakdeps = ["BFloat16s", "ChainRulesCore", "GPUArraysCore", "LogExpFunctions", "SpecialFunctions", "StaticArrays"]
+
+    [deps.Enzyme.extensions]
+    EnzymeBFloat16sExt = "BFloat16s"
+    EnzymeChainRulesCoreExt = "ChainRulesCore"
+    EnzymeGPUArraysCoreExt = "GPUArraysCore"
+    EnzymeLogExpFunctionsExt = "LogExpFunctions"
+    EnzymeSpecialFunctionsExt = "SpecialFunctions"
+    EnzymeStaticArraysExt = "StaticArrays"
+
+[[deps.EnzymeCore]]
+git-tree-sha1 = "0cdb7af5c39e92d78a0ee8d0a447d32f7593137e"
+uuid = "f151be2c-9106-41f4-ab19-57ee4f262869"
+version = "0.8.8"
+weakdeps = ["Adapt"]
+
+    [deps.EnzymeCore.extensions]
+    AdaptExt = "Adapt"
+
+[[deps.Enzyme_jll]]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
+git-tree-sha1 = "b81b0143399acd84a2ed2a1fa0b4ab55e25ee625"
+uuid = "7cc45869-7501-5eee-bdea-0790c847d4ef"
+version = "0.0.172+0"
 
 [[deps.EpollShim_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1220,16 +1246,12 @@ deps = ["Adapt", "Atomix", "InteractiveUtils", "MacroTools", "PrecompileTools", 
 git-tree-sha1 = "d5bc0b079382e89bfa91433639bc74b9f9e17ae7"
 uuid = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 version = "0.9.33"
+weakdeps = ["EnzymeCore", "LinearAlgebra", "SparseArrays"]
 
     [deps.KernelAbstractions.extensions]
     EnzymeExt = "EnzymeCore"
     LinearAlgebraExt = "LinearAlgebra"
     SparseArraysExt = "SparseArrays"
-
-    [deps.KernelAbstractions.weakdeps]
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
-    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [[deps.LAME_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1743,6 +1765,12 @@ version = "0.8.3"
 
     [deps.OMEinsumContractionOrders.weakdeps]
     KaHyPar = "2a6221f6-aa48-11e9-3542-2d9e0ef01880"
+
+[[deps.ObjectFile]]
+deps = ["Reexport", "StructIO"]
+git-tree-sha1 = "dfcc26739b1ffa3ab51fb16f01ba7eb144f7bc50"
+uuid = "d8793406-e978-5875-9003-1fc021f44a92"
+version = "0.4.3"
 
 [[deps.OffsetArrays]]
 git-tree-sha1 = "5e1897147d1ff8d98883cda2be2187dcf57d8f0c"
@@ -2415,6 +2443,11 @@ weakdeps = ["Adapt", "GPUArraysCore", "SparseArrays", "StaticArrays"]
     StructArraysSparseArraysExt = "SparseArrays"
     StructArraysStaticArraysExt = "StaticArrays"
 
+[[deps.StructIO]]
+git-tree-sha1 = "c581be48ae1cbf83e899b14c07a807e1787512cc"
+uuid = "53d494c1-5632-5724-8f4c-31dff12d585f"
+version = "0.3.1"
+
 [[deps.StructTypes]]
 deps = ["Dates", "UUIDs"]
 git-tree-sha1 = "159331b30e94d7b11379037feeb9b690950cace8"
@@ -2831,6 +2864,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "6dba04dbfb72ae3ebe5418ba33d087ba8aa8cb00"
 uuid = "c5fb5394-a638-5e4d-96e5-b29de1b5cf10"
 version = "1.5.1+0"
+
+[[deps.YAML]]
+deps = ["Base64", "Dates", "Printf", "StringEncodings"]
+git-tree-sha1 = "dea63ff72079443240fbd013ba006bcbc8a9ac00"
+uuid = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+version = "0.4.12"
 
 [[deps.ZipFile]]
 deps = ["Libdl", "Printf", "Zlib_jll"]
