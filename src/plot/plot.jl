@@ -1,11 +1,12 @@
 using DelimitedFiles
 using Plots
+using Plots.PlotMeasures
 using Statistics
 
-experiments = ["small_mamba_with_both_dropout", "small_mamba", "small_mamba_with_standard_dropout", "small_mamba_with_ssm_dropout"]
+experiments = ["mamba_with_both_dropout", "mamba", "mamba_with_standard_dropout", "mamba_with_ssm_dropout"]
 mkpath("images")
 
-colors = [:blue, :red, :green, :brown]  # One color per model
+colors = [:blue, :red, :green, :brown]
 
 combined_plot = plot(
     title = "Loss Curve Comparison",
@@ -14,11 +15,13 @@ combined_plot = plot(
     legend = :topright,
     linewidth = 2,
     ylims = (1.0, 2.0),
-    size = (1000, 800) 
+    size = (1400, 800),
+    left_margin = 15mm,
+    right_margin = 20mm,
+    bottom_margin = 10mm
 )
 
 for (i, experiment) in enumerate(experiments)
-
     subdirs = readdir("saved_csv/$(experiment)", join=true)
     
     all_train_losses = []
@@ -34,19 +37,14 @@ for (i, experiment) in enumerate(experiments)
         push!(min_test_losses, minimum(test_losses))
     end
     
-    # Convert to a matrix where each row is a run
     train_loss_matrix = hcat(all_train_losses...)
     test_loss_matrix = hcat(all_test_losses...)
     
     mean_train_loss = mean(train_loss_matrix, dims=2)
-    
     mean_test_loss = mean(test_loss_matrix, dims=2)
     std_test_loss = std(test_loss_matrix, dims=2)
     
-    # Compute 95% confidence interval for test loss
     conf_test = 1.96 * std_test_loss / sqrt(size(test_loss_matrix, 2))
-    
-    # Compute the mean of the minimum test loss values across all runs
     mean_min_test_loss = mean(min_test_losses)
     
     println("Experiment: $(experiment)")
@@ -61,6 +59,7 @@ for (i, experiment) in enumerate(experiments)
     individual_plot = plot(
         1:length(mean_train_loss), mean_train_loss, label = "Training Loss", xlabel = "Steps", ylabel = "Loss",
         title = "Loss Curve - $(experiment)", linewidth = 2, legend = :topright, ylims = (1.0, 2.0), color = colors[i],
+        left_margin = 15mm, right_margin = 20mm, bottom_margin = 10mm
     )
     plot!(test_steps, mean_test_loss, ribbon=conf_test, label = "Test Loss", linewidth = 2, linestyle = :dash, color = colors[i])
     
