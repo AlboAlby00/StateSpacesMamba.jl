@@ -3,10 +3,10 @@ using DelimitedFiles
 
 count_params = (model) -> sum(length(p) for p in Flux.params(model))
 
-function save_losses(experiment, train_losses, test_losses; path="saved_csv")
-    mkpath("$path/$experiment")
-    train_file = "$path/$experiment/train_losses.csv"
-    test_file = "$path/$experiment/test_losses.csv"
+function save_losses(experiment, train_losses, test_losses, iteration; path="saved_csv")
+    mkpath("$path/$experiment/$iteration")
+    train_file = "$path/$experiment/$iteration/train_losses.csv"
+    test_file = "$path/$experiment/$iteration/test_losses.csv"
 
     if isfile(train_file)
         rm(train_file)
@@ -22,15 +22,20 @@ function save_losses(experiment, train_losses, test_losses; path="saved_csv")
     println("Saved new data to $train_file and $test_file")
 end
 
-function save_model_weights(model, experiment; path="saved_weights")
+function save_model_weights(model, experiment, iteration; path="saved_weights")
     mkpath("$path/$experiment")
-    model_file = "$path/$experiment/model.bson"
+    model_file = "$path/$experiment/model_$iteration.bson"
 
     if isfile(model_file)
         rm(model_file)
-        println("Deleted existing file: $model_file")
+        println("Deleted existing file: $experiment/$model_file")
     end
 
     BSON.@save model_file model
-    println("Saved model to $model_file")
+    println("Saved model to $experiment/$model_file")
+end
+
+function set_seed(seed)
+    Random.seed!(seed)
+    CUDA.seed!(seed)
 end
