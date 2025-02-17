@@ -2,6 +2,7 @@ using Flux
 using DelimitedFiles
 
 count_params = (model) -> sum(length(p) for p in Flux.params(model))
+get_unix_time = () -> round(Int, time() * 1000)
 
 function save_losses(experiment, train_losses, test_losses, iteration; path="saved_csv")
     mkpath("$path/$experiment/$iteration")

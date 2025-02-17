@@ -2,7 +2,7 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "bd1486fde7e887fa6eba2873c3d7d360413da5ab"
+project_hash = "6145e1fc8260acdd77846ea4bbcc51512c3c3cf1"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1566,6 +1566,12 @@ deps = ["CSV", "Chemfiles", "DataDeps", "DataFrames", "DelimitedFiles", "FileIO"
 git-tree-sha1 = "361c2692ee730944764945859f1a6b31072e275d"
 uuid = "eb30cadb-4394-5ae3-aed4-317e484a6458"
 version = "0.7.18"
+
+[[deps.MLFlowClient]]
+deps = ["Base64", "Dates", "HTTP", "JSON", "ShowCases", "URIs", "UUIDs"]
+git-tree-sha1 = "d5c8c783ba14a3c45276a441392390c3b310bb62"
+uuid = "64a0f543-368b-4a9a-827a-e71edb2a0b83"
+version = "0.6.1"
 
 [[deps.MLLabelUtils]]
 deps = ["LearnBase", "MappedArrays", "StatsBase"]
