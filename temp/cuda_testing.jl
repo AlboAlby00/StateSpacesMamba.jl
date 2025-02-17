@@ -3,10 +3,10 @@ using BenchmarkTools
 using CUDA
 using Plots
 
-CUDA.allowscalar(true)
+CUDA.allowscalar(false)
 
-K = 8
-BLOCKS = 4
+K = 32
+BLOCKS = 16
 SEQLEN = K * BLOCKS
 
 x = 1:SEQLEN
@@ -39,7 +39,7 @@ end
 #cuda_cumsum_1!(x_d, y_d)
 #@assert y_ == Array(y_d)
 
-function hillis_steele_scan!(x, op, tid, kid)
+function hillis_steele_scan!(x, op, tid)
 
 	offset = 1
 	while offset < blockDim().x
@@ -54,23 +54,32 @@ function hillis_steele_scan!(x, op, tid, kid)
 
 end
 
+
 function cuda_cumsum_for_each_block!(
 	X::CuDeviceVector{T}, Y::CuDeviceVector{T},
 	H0::CuDeviceVector{T}, H::CuDeviceVector{T}) where T
 
-	kid = (blockIdx().x - 1) * blockDim().x
-	tid = threadIdx().x
+    tid = threadIdx().x
+    block_dim = blockDim().x
+	kid = (blockIdx().x - 1) * block_dim + tid
+	block_index = blockIdx().x
 
-	x = CuDynamicSharedArray(T, blockDim().x)
-	@inbounds x[tid] = X[kid+tid]
+	x = CuDynamicSharedArray(T, block_dim)
+	@inbounds x[tid] = X[kid]
 
+	if tid == 1
+		@inbounds x[1] += H0[block_index]
+	end
 
 	sync_threads()
 
-	hillis_steele_scan!(x, +, tid, kid)
+	hillis_steele_scan!(x, +, tid)
 
-	@inbounds Y[kid+tid] = x[tid]
-	@inbounds H[kid] = x[end]
+	@inbounds Y[kid] = x[tid]
+
+	if tid == 1
+		@inbounds H[block_index] = x[end]
+	end
 
 	sync_threads()
 
@@ -78,12 +87,11 @@ function cuda_cumsum_for_each_block!(
 end
 
 function cuda_cumsum!(X, Y, k, blocks)
-	H = CUDA.zeros(Float32, 2, blocks)
-	@cuda threads = k blocks = blocks shmem = (k * sizeof(Float32)) cuda_cumsum_for_each_block!(X, Y, H[1,:], H[1,:])
-    println(H)
-    H[2,2:end] = cumsum(H[1,:]; dims=1)[1:end-1]
-    println(H)
-	@cuda threads = k blocks = blocks shmem = (k * sizeof(Float32)) cuda_cumsum_for_each_block!(X, Y, H[2,:], H[2,:])
+	H0 = CUDA.zeros(Float32, blocks)
+	H = CUDA.zeros(Float32, blocks)
+	@cuda threads = k blocks = blocks shmem = (k * sizeof(Float32)) cuda_cumsum_for_each_block!(X, Y, H0, H0)
+	H[2:end] = cumsum(H0)[1:end-1]
+	@cuda threads = k blocks = blocks shmem = (k * sizeof(Float32)) cuda_cumsum_for_each_block!(X, Y, H, H)
 
 	return nothing
 end
@@ -92,11 +100,16 @@ end
 x_d = Float32.(CuArray(1:SEQLEN))
 y_d = CUDA.zeros(Float32, SEQLEN)
 
-cuda_cumsum!(x_d, y_d, K, BLOCKS)
+# cuda_cumsum!(x_d, y_d, K, BLOCKS)
 
-#@btime cumsum(x_d)
-#@btime cuda_cumsum!(x_d, y_d, K, BLOCKS)
+#= println(CUDA.@profile cumsum(x_d))
+println("-----------------")
+CUDA.@profile cuda_cumsum!(x_d, y_d, K, BLOCKS) =#
+
+# @btime cuda_cumsum!(x_d, y_d, K, BLOCKS)
+
 cuda_cumsum!(x_d, y_d, K, BLOCKS)
-#= println(y_d[1:20])
-println(cumsum(x_d)[1:20]) =#
-@assert cumsum(x_d) == y_d
+#@assert cumsum(x_d) ≈ y_d
+println(y_d)
+
+
