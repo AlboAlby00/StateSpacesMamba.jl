@@ -1,12 +1,12 @@
 using StatsBase
 
 function get_tiny_shakespeare(; seq_len=64, test_percent=0.2, data_to_use_percent=1)
-    isfile("download/input.txt") || download(
+    isfile("download/shakespeare.txt") || download(
         "https://cs.stanford.edu/people/karpathy/char-rnn/shakespeare_input.txt",
-        "download/input.txt",
+        "download/shakespeare.txt",
     )
 
-    text = String(read("download/input.txt"))
+    text = String(read("download/shakespeare.txt"))
 
     text = replace(text, r"\r?\n" => " ")
 
