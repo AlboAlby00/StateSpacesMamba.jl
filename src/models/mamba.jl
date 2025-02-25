@@ -12,6 +12,14 @@ function FullyConnectedBlock(embed_dim, dropout = 0.1)
 	)
 end
 
+function MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, dropout, ssm_dropout)
+    return Chain(
+        [SkipConnection(MambaBlock(embed_dim, embed_dim, D = embed_dim * expand, N = N, Δrank = embed_dim ÷ 8,
+            dropout = dropout, kernel_size = kernel_size, ssm_dropout = ssm_dropout), +) for _ in 1:n_layers-1]...,
+        [SkipConnection(FullyConnectedBlock(embed_dim, dropout), +) for _ in 1:n_fc_layers]...,
+    )
+end
+
 function Mamba(in, out; mamba_block_output_dim = 64, n_layers = 3, N = 16, expand = 16, kernel_size = 4, dropout = 0.0)
 	model = Chain(
 		MambaBlock(in, mamba_block_output_dim, D = expand * in, N = N, dropout = dropout),
@@ -31,6 +39,32 @@ function MambaGPT(vocab_size; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N 
 		Dense(embed_dim => vocab_size),
 	)
 	return model
+end
+
+
+# Define the Mamba dual encoder for the LRA Document Retrieval task
+function MambaDualEncoder(vocab_size, num_classes; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N = 16, expand = 2, kernel_size = 4, dropout = 0.0, ssm_dropout = 0.0)
+
+    embedding = Embedding(vocab_size, embed_dim)
+    shared_encoder = MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, dropout, ssm_dropout)
+	logit_layer = Dense(embed_dim * 2, num_classes)
+
+    model = Chain(
+        # Input 1
+        x1 -> embedding(x1),
+        x1 -> Dropout(dropout)(x1),
+        x1 -> shared_encoder(x1),
+        
+        # Input 2
+        x2 -> embedding(x2),
+        x2 -> Dropout(dropout)(x2),
+        x2 -> shared_encoder(x2),
+    
+		(x1, x2) -> vcat(x1, x2),  # Concatenate embeddings
+        x -> logit_layer(x)
+    )
+    
+    return model
 end
 
 struct MambaBlock
