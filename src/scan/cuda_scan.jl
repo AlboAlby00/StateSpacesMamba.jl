@@ -8,10 +8,11 @@ CUDA.allowscalar(false)
 
 include("scan.jl")
 
-K = 8
-BLOCKS = 16
-BATCH_SIZE = 4
-N = 1
+K = 512
+BLOCKS = 4
+BATCH_SIZE = 32
+N = 16
+D = 256
 SEQLEN = K * BLOCKS
 
 function ema(x, alpha)
@@ -159,6 +160,8 @@ function discretize(a, b, Δ)
 	return ā, b̄
 end
 
+@enum Step FIRST SECOND
+
 function cuda_ssm!(
 	X::CuDeviceArray{T}, Ẋ::CuDeviceArray{T},
 	A::CuDeviceArray{T}, Ȧ::CuDeviceArray{T},
@@ -168,38 +171,41 @@ function cuda_ssm!(
 	Y::CuDeviceArray{T}, Ẏ::CuDeviceArray{T},
 	H0::CuDeviceArray{T}, H0̇::CuDeviceArray{T},
 	H::CuDeviceArray{T}, Ḣ::CuDeviceArray{T};
-	back = false) where T
+	step::Step = SECOND, back = false) where T
 
-	n_dim, block_dim, batch_dim = blockDim()
-	n_index, block_index, batch_index = blockIdx()
-	
+	n = size(A, 2)
+	d, l, b = size(X)
+
+	nd_dim, block_dim, batch_dim = blockDim()
+	nd_index, block_index, batch_index = blockIdx()
+
+	n_index = (nd_index - 1) % n + 1
+	d_index = (nd_index - 1) ÷ n + 1
+
 	tid = threadIdx().y
 
-	n_threads = n_dim * block_dim * batch_dim
+	n_threads = nd_dim * block_dim * batch_dim
 
-	kid = (block_index - 1) * block_dim + threadIdx().y
+	l_index = (block_index - 1) * block_dim + threadIdx().y
 
-
-	@cuprintln("$n_dim $block_dim $batch_dim")
-	#@cuprintln("$n_index $block_index $batch_index")
-
-	#@cuprintln("$(threadIdx().x) $(threadIdx().y) $(threadIdx().z)")
-	@cuprintln(kid)
+	if l_index > l || n_index > n || d_index > d || batch_index > b
+		return nothing
+	end
 
 	# allocate memory
 	h1 = CUDA.@cuDynamicSharedMem(T, n_threads)
 	h2 = CUDA.@cuDynamicSharedMem(T, n_threads, n_threads * sizeof(T))
 	c = CUDA.@cuDynamicSharedMem(T, n_threads, 2 * n_threads * sizeof(T))
 
-	ā, b̄ = discretize(A[n_index, kid, batch_index], B[n_index, kid, batch_index], Δ[n_index, kid, batch_index])
+	ā, b̄ = discretize(A[d_index, n_index], B[n_index, l_index, batch_index], Δ[d_index, l_index, batch_index])
 
 	# load
 	@inbounds h1[tid] = ā
-	@inbounds h2[tid] = b̄ * X[n_index, kid, batch_index]
-	@inbounds c[tid] = C[n_index, kid, batch_index]
+	@inbounds h2[tid] = b̄ * X[d_index, l_index, batch_index]
+	@inbounds c[tid] = C[n_index, l_index, batch_index]
 
 	if tid == 1
-		h1[tid], h2[tid] = ssm_associative_op((h1[1], h2[1]), (H0[1, n_index, block_index, batch_index], H0[2, n_index, block_index, batch_index]))
+		h1[tid], h2[tid] = ssm_associative_op((h1[1], h2[1]), (H0[1, n_index, d_index, block_index, batch_index], H0[2, n_index, d_index, block_index, batch_index]))
 	end
 
 	sync_threads()
@@ -208,9 +214,15 @@ function cuda_ssm!(
 	hillis_steele_scan!(h1, h2, ssm_associative_op, tid, block_dim)
 
 	# store forward
-	@inbounds H[1, n_index, block_index, batch_index] = h1[tid]
-	@inbounds H[2, n_index, block_index, batch_index] = h2[tid]
-	@inbounds Y[n_index, kid, batch_index] = h2[tid][2] * c[tid]
+	if step == FIRST
+		@inbounds H[1, n_index, d_index, block_index, batch_index] = h1[tid]
+		@inbounds H[2, n_index, d_index, block_index, batch_index] = h2[tid]
+	elseif step == SECOND
+		@inbounds CUDA.@atomic Y[d_index, l_index, batch_index] += h2[tid] * c[tid]
+
+	else
+		throw(ErrorException("Step is not correctly defined"))
+	end
 
 	if !back
 		return nothing
@@ -220,31 +232,29 @@ function cuda_ssm!(
 
 end
 
-X = CuArray(repeat(Float32.(1:SEQLEN)', N, 1, BATCH_SIZE))
-Ẋ = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
-Y = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
-Ẏ = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
+function cuda_scan(X, Δ, A, B, C; K = 128, BLOCKS = 64, N = 16, D = 16)
+	Y = CUDA.zeros(Float32, D, SEQLEN, BATCH_SIZE)
+	temp = reshape(get_H0(BLOCKS), 2, 1, 1, BLOCKS, 1)
+	H0 = repeat(temp, 1, N, D, 1, BATCH_SIZE)
+	H = CUDA.zeros(Float32, 2, N, D, BLOCKS, BATCH_SIZE)
+	Ẋ, Δ̇, Ȧ, Ḃ, Ċ, Ẏ, H0̇, Ḣ = (similar(Z) .= 0 for Z in (X, Δ, A, B, C, Y, H0, H))
+	CUDA.@sync @cuda threads = (1, K, 1) blocks = (N * D, BLOCKS, BATCH_SIZE) shmem = (3 * sizeof(Float32) * K) cuda_ssm!(X, Ẋ, A, Ȧ, B, Ḃ, C, Ċ, Δ, Δ̇, Y, Ẏ, H0, H0̇, H, Ḣ)
+	return Y
+end
 
-alpha = 0.5f0
-A = CUDA.ones(Float32, N, SEQLEN, BATCH_SIZE) .* alpha
-Ȧ = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
-B = CUDA.ones(Float32, N, SEQLEN, BATCH_SIZE) .- alpha
-Ḃ = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
-C = CUDA.ones(Float32, N, SEQLEN, BATCH_SIZE)
-Ċ = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
-Δ = CUDA.ones(Float32, N, SEQLEN, BATCH_SIZE)
-Δ̇ = CUDA.zeros(Float32, N, SEQLEN, BATCH_SIZE)
+X = CuArray(repeat(Float32.(1:SEQLEN)', D, 1, BATCH_SIZE))
 
-temp = reshape(get_H0(BLOCKS), 2, 1, BLOCKS, 1)
-H0 = repeat(temp, 1, N, 1, BATCH_SIZE)
-H0̇ = CUDA.zeros(Float32, 2, N, BLOCKS, BATCH_SIZE)
-H = CUDA.zeros(Float32, 2, N, BLOCKS, BATCH_SIZE)
-Ḣ = CUDA.zeros(Float32, 2, N, BLOCKS, BATCH_SIZE)
+alpha = 0.9f0
+A = CUDA.rand(Float32, D, N) .* alpha
+B = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE) .- alpha
+C = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE)
+Δ = CUDA.rand(Float32, D, SEQLEN, BATCH_SIZE) .* 5f0
 
-CUDA.@sync @cuda threads = (1, K, 1) blocks = (N, BLOCKS, BATCH_SIZE) shmem = (3 * sizeof(Float32) * J * K * Q) cuda_ssm!(X, Ẋ, A, Ȧ, B, Ḃ, C, Ċ, Δ, Δ̇, Y, Ẏ, H0, H0̇, H, Ḣ)
-println(Y[1, :, 1])
 
-A_ = CUDA.ones(Float32, N, N) .* alpha
+@time Y = cuda_scan(X, Δ, A, B, C)
 
-Y_ = associative_selective_scan(X, Δ, A_, B, C)
-println(Y_[1,:,1])
+#@time Y_ = associative_selective_scan(X, Δ, A, B, C)
+
+#println(Y[4, :, 4])
+println("---")
+#println(Y_[4, :, 4])
