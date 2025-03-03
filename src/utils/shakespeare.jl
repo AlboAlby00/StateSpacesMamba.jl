@@ -1,7 +1,7 @@
 using StatsBase
 
 function get_tiny_shakespeare(; seq_len=64, test_percent=0.2, data_to_use_percent=1)
-    isfile("download/shakespeare.txt") || download(
+    isfile("download/shakespeare.txt") || Base.download(
         "https://cs.stanford.edu/people/karpathy/char-rnn/shakespeare_input.txt",
         "download/shakespeare.txt",
     )
@@ -20,6 +20,8 @@ function get_tiny_shakespeare(; seq_len=64, test_percent=0.2, data_to_use_percen
     Ys = reshape(collect(text)[2:B*seq_len+1], seq_len, B)
 
     Xs[1,:] .= stop
+
+    println(typeof(Xs))
 
     Xs = map(c -> Int32(findfirst(==(c), alphabet)), Xs)
     Ys = Flux.onehotbatch(Ys, alphabet)
@@ -48,3 +50,6 @@ function generate(model, alphabet, seed, outlen, seqlen)
     end
     String(map(j -> alphabet[j], x))
 end
+
+
+alphabet, trainX, trainY, testX, testY = get_tiny_shakespeare(seq_len = 250)

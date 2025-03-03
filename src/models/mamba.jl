@@ -41,30 +41,30 @@ function MambaGPT(vocab_size; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N 
 	return model
 end
 
-
 # Define the Mamba dual encoder for the LRA Document Retrieval task
-function MambaDualEncoder(vocab_size, num_classes; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N = 16, expand = 2, kernel_size = 4, dropout = 0.0, ssm_dropout = 0.0)
+struct MambaDualEncoder
+	embedding::Embedding
+	shared_encoder::Chain
+	logit_layer::Dense
+	dropout::Dropout
+end
+Flux.@layer MambaDualEncoder trainable = (embedding, shared_encoder, logit_layer)
+
+function MambaDualEncoder(vocab_size; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N = 16, expand = 2, kernel_size = 4, dropout = 0.0, ssm_dropout = 0.0)
 
     embedding = Embedding(vocab_size, embed_dim)
     shared_encoder = MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, dropout, ssm_dropout)
-	logit_layer = Dense(embed_dim * 2, num_classes)
+	logit_layer = Dense(embed_dim * 2, 1)
+	dropout_layer = Dropout(dropout)
+    
+    return MambaDualEncoder(embedding, shared_encoder, logit_layer, dropout_layer)
+end
 
-    model = Chain(
-        # Input 1
-        x1 -> embedding(x1),
-        x1 -> Dropout(dropout)(x1),
-        x1 -> shared_encoder(x1),
-        
-        # Input 2
-        x2 -> embedding(x2),
-        x2 -> Dropout(dropout)(x2),
-        x2 -> shared_encoder(x2),
-    
-		(x1, x2) -> vcat(x1, x2),  # Concatenate embeddings
-        x -> logit_layer(x)
-    )
-    
-    return model
+function (m::MambaDualEncoder)(x1, x2)
+	out1 = m.shared_encoder(m.dropout(m.embedding(x1)))
+	out2 = m.shared_encoder(m.dropout(m.embedding(x2)))
+	concat = vcat(out1, out2)  # Concatenate embeddings
+	out = m.logit_layer(concat)
 end
 
 struct MambaBlock
@@ -100,7 +100,6 @@ function (m::MambaBlock)(x)
 	out_project = m.project_input(x)
 	# Conv layer requires size l, d, b but out_project size is d, l, b. We need to permute the dims
 	out_project = permutedims(out_project, (2, 1, 3)) # permute l and d
-	#out_conv = swish(out_project)
 	out_conv = swish(m.causal_conv_1d(out_project))
 	out_conv = permutedims(out_conv, (2, 1, 3)) # permute d and l to return to original size
 

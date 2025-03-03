@@ -30,7 +30,7 @@ function selective_scan(x, Δ, A, B, C)
     return copy(y_stack)
 end
 
-function associative_selective_scan(x, Δ, A, B, C; mode=:cumsum)
+function associative_selective_scan(x, Δ, A, B, C; mode=:cumsum, eps = 1e-12)
 
     d, l, b = size(x)
     n = size(A, 2)
@@ -41,7 +41,7 @@ function associative_selective_scan(x, Δ, A, B, C; mode=:cumsum)
 
     temp = Flux.pad_zeros(Ā[:,:,2:end,:],(0,0,0,0,1,0,0,0))
     Ā_cumsum = exp.(cumsum(temp, dims=3)) # cumulative sums on the l dimension
-    temp = Float32.(B̄x ./ (Ā_cumsum .+ 1e-12))
+    temp = Float32.(B̄x ./ (Ā_cumsum .+ eps))
     h′ = cumsum(temp, dims=3) .* Ā_cumsum
     @ein y[d, l, b] := h′[d, n, l, b] * C[n, l, b]
 
@@ -55,3 +55,4 @@ end
     h = exp.(real.(h_log)) .* cos.(imag.(h_log))
     @ein y[d, l, b] := h[d, n, l, b] * C[n, l, b]
 end =#
+

@@ -10,9 +10,9 @@ include("scan.jl")
 
 K = 512
 BLOCKS = 64
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 N = 16
-D = 32
+D = 16
 SEQLEN = K * BLOCKS
 
 function hillis_steele_scan!(h1, h2, op, tid, block_dim; reversed::Bool = false)
@@ -48,6 +48,19 @@ function get_H0(blocks::Int, batch_size, n, d)
 	return H0
 end
 
+function discretize_back(a, b, d, da_, db_)
+    da = Δ * a
+    a_ = exp(da)
+
+    da_da = d * a_
+    da_dΔ = a * a_
+
+    db_db = Δ
+    db_dΔ = b
+
+    return da_ * da_da, db_ * db_db, dā * da_dΔ + db_ * db_dΔ
+end
+
 function discretize(a, b, Δ)
 	Δa = Δ * a
 	ā = exp(Δa)
@@ -62,9 +75,9 @@ function cuda_ssm!(
 	A::CuDeviceArray{T}, Ȧ::CuDeviceArray{T},
 	B::CuDeviceArray{T}, Ḃ::CuDeviceArray{T},
 	C::CuDeviceArray{T}, Ċ::CuDeviceArray{T},
-	Δ::CuDeviceArray{T}, Δ̇::CuDeviceArray{T},
+	Δ::CuDeviceArray{T}, dΔ::CuDeviceArray{T},
 	Y::CuDeviceArray{T}, Ẏ::CuDeviceArray{T},
-	H0::CuDeviceArray{T}, H0̇::CuDeviceArray{T},
+	H0::CuDeviceArray{T}, dH0::CuDeviceArray{T},
 	H::CuDeviceArray{T}, Ḣ::CuDeviceArray{T},
 	step, back) where T
 
@@ -95,7 +108,9 @@ function cuda_ssm!(
 		shared_A[1] = A[d_index, n_index]
 	end
 	sync_threads()
-	
+
+	# Forward pass
+
 	a = shared_A[1]
 	b = B[n_index, l_index, batch_index]
 	delta = Δ[d_index, l_index, batch_index]
@@ -116,8 +131,6 @@ function cuda_ssm!(
 	# Perform scan
 	hillis_steele_scan!(h1, h2, ssm_associative_op, tid, block_dim)
 
-	sync_threads()
-
 	# Store results
 	if step == FIRST && tid == 1
 		H[1, n_index, d_index, block_index, batch_index] = h1[end]
@@ -125,6 +138,44 @@ function cuda_ssm!(
 	elseif step == SECOND
 		@inbounds CUDA.@atomic Y[d_index, l_index, batch_index] += h2[tid] * c
 	end
+
+
+	# Backward pass
+	if !back
+		return
+	end
+
+	dh1, dh2 = h1, h2
+
+	ẏ = Ẏ[d_index, l_index, batch_index]
+
+	if tid == block_dim
+		delta_shifted = 0
+	else
+		delta_shifted = Δ[d_index, l_index+1, batch_index]
+	end
+	a_s, _ = discretize(a, d, delta_shifted)
+
+	@inbounds dh1[tid] = a_s
+	@inbounds dh2[tid] = c * ẏ
+
+	# Set first dh value using dH0 data
+	if tid == 1
+		dh0_1 = dH0[1, n_index, d_index, block_index, batch_index]
+		dh0_2 = dH0[2, n_index, d_index, block_index, batch_index]
+		dh1[1], dh2[1] = ssm_associative_op((dh1[1], dh2[1]), (dh0_1, dh0_2))
+	end
+
+	hillis_steele_scan!(dh1, dh2, ssm_associative_op, tid, block_dim, reversed=true)
+
+	if step == FIRST
+		Ḣ[1, n_index, d_index, block_index, batch_index] = dh1[end]
+		Ḣ[2, n_index, d_index, block_index, batch_index] = dh2[end]
+	elseif step == SECOND
+		a_s, _ = discretize(a, d, delta_shifted)
+	end
+
+
 
 	return nothing
 end
@@ -136,21 +187,21 @@ function reduce!(H::CuDeviceArray{T}) where T
 	n_index = (nd_index - 1) % n + 1
 	d_index = (nd_index - 1) ÷ n + 1
 
-	h1_shared = CUDA.@cuDynamicSharedMem(T, blockDim().y)
-	h2_shared = CUDA.@cuDynamicSharedMem(T, blockDim().y, blockDim().y * sizeof(T))
+	h1 = CUDA.@cuDynamicSharedMem(T, blockDim().y)
+	h2 = CUDA.@cuDynamicSharedMem(T, blockDim().y, blockDim().y * sizeof(T))
 
-	@inbounds h1_shared[tid] = H[1, n_index, d_index, tid, batch_index]
-	@inbounds h2_shared[tid] = H[2, n_index, d_index, tid, batch_index]
+	@inbounds h1[tid] = H[1, n_index, d_index, tid, batch_index]
+	@inbounds h2[tid] = H[2, n_index, d_index, tid, batch_index]
 	sync_threads()
 
-	hillis_steele_scan!(h1_shared, h2_shared, ssm_associative_op, tid, blockDim().y)
+	hillis_steele_scan!(h1, h2, ssm_associative_op, tid, blockDim().y)
 
-	@inbounds H[1, n_index, d_index, tid, batch_index] = h1_shared[tid]
-	@inbounds H[2, n_index, d_index, tid, batch_index] = h2_shared[tid]
+	@inbounds H[1, n_index, d_index, tid, batch_index] = h1[tid]
+	@inbounds H[2, n_index, d_index, tid, batch_index] = h2[tid]
 	return nothing
 end
 
-function cuda_scan!(X, Δ, A, B, C; K = 128)
+function cuda_scan(X, Δ, A, B, C; K = 128)
 	d, l, b = size(X)
 	blocks = l ÷ K
 	n = size(A, 2)
@@ -158,18 +209,18 @@ function cuda_scan!(X, Δ, A, B, C; K = 128)
 	H = CUDA.zeros(Float32, 2, n, d, blocks, b)
 	Y = CUDA.zeros(Float32, d, l, b)
 
+	Ẋ, Ȧ, Ḃ, Ċ, dΔ, dH0, Ḣ = CUDA.zeros(size(X)), CUDA.zeros(size(A)), CUDA.zeros(size(B)), CUDA.zeros(size(C)), CUDA.zeros(size(Δ)), CUDA.zeros(size(H0)), CUDA.zeros(size(H))
+	Ẏ = CUDA.zeros(size(Y))
+
 	shmem_size = (2 * K + 1) * sizeof(Float32)
-	CUDA.@sync @cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
-		X, similar(X), A, similar(A), B, similar(B), C, similar(C), Δ, similar(Δ),
-		Y, similar(Y), H0, similar(H0), H, similar(H), FIRST, false,
-	)
-	CUDA.@sync @cuda threads = (1, blocks, 1) blocks = (n * d, 1, b) shmem = 2 * blocks * sizeof(Float32) reduce!(H)
+	CUDA.@sync CUDA.@cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
+		X, Ẋ, A, Ȧ, B, Ḃ, C, Ċ, Δ, dΔ, Y, Ẏ, H0, dH0, H, Ḣ, FIRST, true)
+	CUDA.@sync CUDA.@cuda threads = (1, blocks, 1) blocks = (n * d, 1, b) shmem = 2 * blocks * sizeof(Float32) reduce!(H)
 	H0[:, :, :, 2:end, :] .= H[:, :, :, 1:end-1, :]
-	CUDA.@sync @cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
-		X, similar(X), A, similar(A), B, similar(B), C, similar(C), Δ, similar(Δ),
-		Y, similar(Y), H0, similar(H0), H, similar(H), SECOND, false,
-	)
-	return Y
+	CUDA.@sync CUDA.@cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
+		X, Ẋ, A, Ȧ, B, Ḃ, C, Ċ, Δ, dΔ, Y, Ẏ, H0, dH0, H, Ḣ, SECOND, true)
+
+	return Y, (Ẋ, dΔ, Ȧ, Ḃ, Ċ)
 end
 
 X = CuArray(repeat(Float32.(1:SEQLEN)', D, 1, BATCH_SIZE))
@@ -180,13 +231,17 @@ B = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE) .- alpha
 C = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE)
 Δ = CUDA.rand(Float32, D, SEQLEN, BATCH_SIZE) .* 0.01f0
 
-CUDA.@time Q = associative_selective_scan(X, Δ, A, B, C)
-CUDA.@time Y = cuda_scan!(X, Δ, A, B, C, K = K)
+#CUDA.@time Q = associative_selective_scan(X, Δ, A, B, C)
+#= loss = (X, Δ, A, B, C) -> sum(associative_selective_scan(X, Δ, A, B, C))
+CUDA.@time Qg = Zygote.gradient(loss, X, Δ, A, B, C) =#
 
-#= println(Q[1,1:64:end,1])
-println(Y[1,1:64:end,1]) =#
+CUDA.@profile  Y, Yg = cuda_scan(X, Δ, A, B, C, K = K)
 
+#@assert isapprox(Array(Q), Array(Y), rtol = 0.1)
 
-@assert isapprox(Array(Q), Array(Y), rtol = 0.1)
+#= for (S, T) in zip(Yg, Qg)
+	TEST = CUDA.zeros(size(S))
+	@assert isapprox(Array(S), Array(TEST), rtol = 0.1)
+end =#
 
 println("---")

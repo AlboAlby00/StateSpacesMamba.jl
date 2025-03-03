@@ -1,4 +1,4 @@
-using CUDA, Enzyme, Random, Zygote, Flux
+using CUDA, Random, Zygote, Flux
 using Zygote: @nograd
 import Flux: testmode!, trainmode!
 

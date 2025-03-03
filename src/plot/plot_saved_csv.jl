@@ -3,7 +3,7 @@ using Plots
 using Plots.PlotMeasures
 using Statistics
 
-experiments = ["mamba_with_both_dropout", "mamba", "mamba_with_standard_dropout", "mamba_with_ssm_dropout"]
+experiments = ["small_mamba_with_both_dropout", "small_mamba", "mamba_with_standard_dropout", "mamba_with_ssm_dropout"]
 mkpath("images")
 
 colors = [:blue, :red, :green, :brown]
