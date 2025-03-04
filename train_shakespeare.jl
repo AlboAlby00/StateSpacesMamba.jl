@@ -90,14 +90,14 @@ end
 
 
 device = gpu_device()
-use_mlflow = false
+use_mlflow = true
 
 if use_mlflow
 	MLF = MLFlow("http://localhost:8080/api")
 end
 
 # Run for multiple models
-for experiment in ["test"]
+for experiment in ["test_A_dropout_small"]
 	experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
 
 	experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing

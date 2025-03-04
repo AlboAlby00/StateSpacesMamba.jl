@@ -19,3 +19,5 @@ num_iterations: 2
 
 save_csv: false
 save_model: false
+
+use_A_dropout: true
