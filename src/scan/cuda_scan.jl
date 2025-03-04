@@ -9,10 +9,10 @@ CUDA.allowscalar(false)
 include("scan.jl")
 
 K = 4
-BLOCKS = 1
-BATCH_SIZE = 4
+BLOCKS = 2
+BATCH_SIZE = 16
 N = 16
-D = 16
+D = 32
 SEQLEN = K * BLOCKS
 
 function hillis_steele_scan!(t1, t2, op, tid, block_dim, reversed)
@@ -166,7 +166,7 @@ function cuda_ssm!(
         dh1[end], dh2[end] = ssm_associative_op((dh1[end], dh2[end]), (dh0_1, dh0_2))
     end
 
-    hillis_steele_scan!(dh1, dh2, ssm_associative_op, tid, block_dim, reversed=true)
+    hillis_steele_scan!(dh1, dh2, ssm_associative_op, tid, block_dim, true)
 
     if step == FIRST
         Ḣ[1, n_index, d_index, block_index, batch_index] = dh1[1]
@@ -177,20 +177,20 @@ function cuda_ssm!(
 		# since h2[tid] = b̄ * X[d_index, l_index, batch_index] and since we don't store x in shared memory, we can avoid accessing X in global memory by doing
 		# x = current_h / b̄
 		current_h = h2[tid]
-		db̄ = dh2[tid] * (current_h / b̄) 
+		db̄ = dh2[tid] * X[d_index, l_index, batch_index]
 		
 		# computing h at previous timestamp repeating again the forward pass, since it is less computationally expensive than storing the values in memory
 		if tid > 1
 			previous_h = h2[tid-1]
 		else
-			previous_h = H[2, n_index, d_index, block_index, batch_index]
+			previous_h = H0[2, n_index, d_index, block_index, batch_index]
 		end
 		dā = dh2[tid] * previous_h
 
 		ȧ, ḃ, ddelta = discretize_back(a, b, delta, dā, db̄)
 
 		CUDA.@atomic Ȧ[d_index, n_index] += ȧ
-        CUDA.@atomic Ḃ[d_index, l_index, batch_index] += ḃ
+        CUDA.@atomic Ḃ[n_index, l_index, batch_index] += ḃ
 		CUDA.@atomic dΔ[d_index, l_index, batch_index] += ddelta
 
     end
@@ -262,14 +262,13 @@ CUDA.@time Y, Yg = cuda_scan(X, Δ, A, B, C, K=K)
 
 #@assert isapprox(Array(Q), Array(Y), rtol = 0.1)
 
-println(Qg[4][1, :, 1])
-println(Yg[4][1, :, 1])
-
 #@assert isapprox(Array(Qg[2]), Array(Yg[2]), rtol=0.1)
 
-#= for (S, T) in zip(Yg, Qg)
-	TEST = CUDA.zeros(size(S))
-	@assert isapprox(Array(S), Array(TEST), rtol = 0.1)
-end =#
+for (S, T) in zip(Yg, Qg)
+	println(S[1, :, 1])
+	println(T[1, :, 1])
+	println("--")
+	@assert isapprox(Array(S), Array(T), rtol = 0.1)
+end
 
 println("---")
