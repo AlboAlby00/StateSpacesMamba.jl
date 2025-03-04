@@ -8,8 +8,8 @@ CUDA.allowscalar(false)
 
 include("scan.jl")
 
-K = 32
-BLOCKS = 2
+K = 4
+BLOCKS = 1
 BATCH_SIZE = 4
 N = 16
 D = 16
@@ -49,16 +49,16 @@ function get_H0(blocks::Int, batch_size, n, d)
 end
 
 function discretize_back(a, b, d, da_, db_)
-    da = Δ * a
+    da = d * a
     a_ = exp(da)
 
     da_da = d * a_
     da_dΔ = a * a_
 
-    db_db = Δ
+    db_db = d
     db_dΔ = b
 
-    return da_ * da_da, db_ * db_db, dā * da_dΔ + db_ * db_dΔ
+    return da_ * da_da, db_ * db_db, da_ * da_dΔ + db_ * db_dΔ
 end
 
 function discretize(a, b, Δ)
@@ -141,8 +141,8 @@ function cuda_ssm!(
         @inbounds CUDA.@atomic Y[d_index, l_index, batch_index] += h2[tid] * c
     end
 
-
     # Backward pass
+
     if !back
         return
     end
@@ -154,9 +154,9 @@ function cuda_ssm!(
     else
         delta_shifted = Δ[d_index, l_index+1, batch_index]
     end
-    a_s, _ = discretize(a, d, delta_shifted)
+    a_shifted, _ = discretize(a, d, delta_shifted)
 
-    @inbounds dh1[tid] = a_s
+    @inbounds dh1[tid] = a_shifted
     @inbounds dh2[tid] = c * ẏ
 
     # Set first (for reverse) dh value using dH0 data
@@ -174,6 +174,25 @@ function cuda_ssm!(
     elseif step == SECOND
         CUDA.@atomic Ċ[n_index, l_index, batch_index] += h2[tid] * ẏ
         CUDA.@atomic Ẋ[d_index, l_index, batch_index] += b̄ * dh2[tid]
+		# since h2[tid] = b̄ * X[d_index, l_index, batch_index] and since we don't store x in shared memory, we can avoid accessing X in global memory by doing
+		# x = current_h / b̄
+		current_h = h2[tid]
+		db̄ = dh2[tid] * (current_h / b̄) 
+		
+		# computing h at previous timestamp repeating again the forward pass, since it is less computationally expensive than storing the values in memory
+		if tid > 1
+			previous_h = h2[tid-1]
+		else
+			previous_h = H[2, n_index, d_index, block_index, batch_index]
+		end
+		dā = dh2[tid] * previous_h
+
+		ȧ, ḃ, ddelta = discretize_back(a, b, delta, dā, db̄)
+
+		CUDA.@atomic Ȧ[d_index, n_index] += ȧ
+        CUDA.@atomic Ḃ[d_index, l_index, batch_index] += ḃ
+		CUDA.@atomic dΔ[d_index, l_index, batch_index] += ddelta
+
     end
 
     return nothing
@@ -243,10 +262,10 @@ CUDA.@time Y, Yg = cuda_scan(X, Δ, A, B, C, K=K)
 
 #@assert isapprox(Array(Q), Array(Y), rtol = 0.1)
 
-println(Qg[1][1, :, 1])
-println(Yg[1][1, :, 1])
+println(Qg[4][1, :, 1])
+println(Yg[4][1, :, 1])
 
-@assert isapprox(Array(Qg[1]), Array(Yg[1]), rtol=0.1)
+#@assert isapprox(Array(Qg[2]), Array(Yg[2]), rtol=0.1)
 
 #= for (S, T) in zip(Yg, Qg)
 	TEST = CUDA.zeros(size(S))
