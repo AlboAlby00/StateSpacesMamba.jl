@@ -13,11 +13,11 @@ function FullyConnectedBlock(embed_dim, dropout = 0.1)
 end
 
 function MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, dropout, ssm_dropout, use_A_dropout)
-    return Chain(
-        [SkipConnection(MambaBlock(embed_dim, embed_dim, D = embed_dim * expand, N = N, Δrank = embed_dim ÷ 8,
-            dropout = dropout, kernel_size = kernel_size, ssm_dropout = ssm_dropout, use_A_dropout = use_A_dropout), +) for _ in 1:n_layers-1]...,
-        [SkipConnection(FullyConnectedBlock(embed_dim, dropout), +) for _ in 1:n_fc_layers]...,
-    )
+	return Chain(
+		[SkipConnection(MambaBlock(embed_dim, embed_dim, D = embed_dim * expand, N = N, Δrank = embed_dim ÷ 8,
+			dropout = dropout, kernel_size = kernel_size, ssm_dropout = ssm_dropout, use_A_dropout = use_A_dropout), +) for _ in 1:n_layers-1]...,
+		[SkipConnection(FullyConnectedBlock(embed_dim, dropout), +) for _ in 1:n_fc_layers]...,
+	)
 end
 
 function Mamba(in, out; mamba_block_output_dim = 64, n_layers = 3, N = 16, expand = 16, kernel_size = 4, dropout = 0.0)
@@ -48,14 +48,14 @@ struct MambaDualEncoder
 end
 Flux.@layer MambaDualEncoder trainable = (embedding, shared_encoder, logit_layer)
 
-function MambaDualEncoder(vocab_size; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N = 16, expand = 2, kernel_size = 4, dropout = 0.0, ssm_dropout = 0.0)
+function MambaDualEncoder(vocab_size; embed_dim = 128, n_layers = 3, n_fc_layers = 2, N = 16, expand = 2, kernel_size = 4, dropout = 0.0, ssm_dropout = 0.0, use_A_dropout = true)
 
-    embedding = Embedding(vocab_size, embed_dim)
-    shared_encoder = MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, dropout, ssm_dropout)
+	embedding = Embedding(vocab_size, embed_dim)
+	shared_encoder = MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, dropout, ssm_dropout, use_A_dropout)
 	logit_layer = Dense(embed_dim * 2, 1)
 	dropout_layer = Dropout(dropout)
-    
-    return MambaDualEncoder(embedding, shared_encoder, logit_layer, dropout_layer)
+
+	return MambaDualEncoder(embedding, shared_encoder, logit_layer, dropout_layer)
 end
 
 function (m::MambaDualEncoder)(x1, x2)
@@ -92,7 +92,6 @@ end
 function (m::MambaBlock)(x)
 
 	d, l, b = size(x)
-
 	x = m.norm(x)
 
 	out_project = m.project_input(x)

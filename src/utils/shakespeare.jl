@@ -21,8 +21,6 @@ function get_tiny_shakespeare(; seq_len=64, test_percent=0.2, data_to_use_percen
 
     Xs[1,:] .= stop
 
-    println(typeof(Xs))
-
     Xs = map(c -> Int32(findfirst(==(c), alphabet)), Xs)
     Ys = Flux.onehotbatch(Ys, alphabet)
 
@@ -50,6 +48,3 @@ function generate(model, alphabet, seed, outlen, seqlen)
     end
     String(map(j -> alphabet[j], x))
 end
-
-
-alphabet, trainX, trainY, testX, testY = get_tiny_shakespeare(seq_len = 250)

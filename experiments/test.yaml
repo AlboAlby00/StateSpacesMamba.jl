@@ -1,17 +1,22 @@
+# total params: 1987139
 # model params
-model_name: transformer
+model_name: mamba
 embed_dim: 256
-n_layers: 3
+N: 16
+n_layers: 6
 dropout: 0.1
+ssm_dropout: 0.1
 # other hyperparameters
-data_to_use_percent: 0.2
-train_batch_size: 16
-test_batch_size: 16
+data_to_use_percent: 1.0
+train_batch_size: 64
+test_batch_size: 64
 seq_len: 256
+num_epochs: 150
 initial_lr: 1e-3
 init_fin_lr_ratio: 0.1
-save_csv: true
-save_model: true
 
-num_epochs: 2
-num_iterations: 2
+save_csv: false
+save_model: false
+
+use_A_dropout: true
+num_iterations: 3

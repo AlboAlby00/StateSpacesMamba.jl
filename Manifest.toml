@@ -2,7 +2,7 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "eadf85da87802028962ca3088aa839f103fbabe1"
+project_hash = "7b91096a25ccc9d17e4fbede31f4d8eb0a325198"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -338,6 +338,12 @@ weakdeps = ["SparseArrays"]
 
     [deps.ChainRulesCore.extensions]
     ChainRulesCoreSparseArraysExt = "SparseArrays"
+
+[[deps.ChainRulesTestUtils]]
+deps = ["ChainRulesCore", "Compat", "FiniteDifferences", "LinearAlgebra", "Random", "Suppressor", "Test"]
+git-tree-sha1 = "cffe963ae0879e455d74ffd8243348293d72988a"
+uuid = "cdddcdb0-9152-4a09-a978-84456f9df70a"
+version = "1.13.0"
 
 [[deps.Chemfiles]]
 deps = ["AtomsBase", "Chemfiles_jll", "DocStringExtensions", "Unitful", "UnitfulAtomic"]
@@ -721,6 +727,12 @@ version = "1.13.0"
     PDMats = "90014a1f-27ba-587c-ab20-58faa44d9150"
     SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
     Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[[deps.FiniteDifferences]]
+deps = ["ChainRulesCore", "LinearAlgebra", "Printf", "Random", "Richardson", "SparseArrays", "StaticArrays"]
+git-tree-sha1 = "06d76c780d657729cf20821fb5832c6cc4dfd0b5"
+uuid = "26cc04aa-876d-5657-8c51-4c34ba976000"
+version = "0.12.32"
 
 [[deps.FixedPointNumbers]]
 deps = ["Statistics"]
@@ -2200,6 +2212,12 @@ weakdeps = ["Distributed"]
 
     [deps.Revise.extensions]
     DistributedExt = "Distributed"
+
+[[deps.Richardson]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "48f038bfd83344065434089c2a79417f38715c41"
+uuid = "708f8203-808e-40c0-ba2d-98a6953ed40d"
+version = "1.4.2"
 
 [[deps.Rotations]]
 deps = ["LinearAlgebra", "Quaternions", "Random", "StaticArrays"]
