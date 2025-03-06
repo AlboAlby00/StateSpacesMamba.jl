@@ -1,0 +1,22 @@
+# total params: 1987139
+# model params
+model_name: mamba
+embed_dim: 128
+N: 16
+n_layers: 6
+dropout: 0.1
+ssm_dropout: 0.1
+# other hyperparameters
+data_to_use_percent: 1.0
+train_batch_size: 64
+test_batch_size: 128
+seq_len: 256
+num_epochs: 85
+initial_lr: 1e-3
+init_fin_lr_ratio: 0.1
+
+save_csv: true
+save_model: true
+
+use_A_dropout: [false, true]
+num_iterations: 2

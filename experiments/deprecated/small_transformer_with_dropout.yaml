@@ -1,0 +1,15 @@
+# model params
+model_name: transformer
+embed_dim: 256
+n_layers: 3
+dropout: 0.1
+# other hyperparameters
+data_to_use_percent: 0.2
+train_batch_size: 64
+test_batch_size: 64
+seq_len: 256
+num_epochs: 100
+initial_lr: 1e-3
+final_lr: 1e-4
+save_csv: true
+save_model: true

@@ -1,0 +1,7 @@
+images/**
+download/**
+saved_csv/**
+saved_weights/**
+mlruns/**
+data/**
+
