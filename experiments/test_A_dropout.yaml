@@ -9,7 +9,7 @@ ssm_dropout: 0.1
 # other hyperparameters
 data_to_use_percent: 1.0
 train_batch_size: 64
-test_batch_size: 128
+test_batch_size: 64
 seq_len: 256
 num_epochs: 85
 initial_lr: 1e-3

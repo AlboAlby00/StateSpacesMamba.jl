@@ -44,11 +44,11 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
 			validation_loss = Flux.Losses.logitcrossentropy(logits, y)
 			push!(losses, validation_loss)
 			next!(test_progress; showvalues = [("Mean Loss", mean(losses))])
-			if !isnothing(mlflow_experiment_id)
-				logmetric(MLF, exprun, "validation loss", Float64(validation_loss))
-			end
 		end
 		epoch_test_loss = mean(losses)
+		if !isnothing(mlflow_experiment_id)
+			logmetric(MLF, exprun, "validation loss", Float64(epoch_test_loss))
+		end
 		push!(test_losses, epoch_test_loss)
 
 		if epoch_test_loss < best_test_loss
