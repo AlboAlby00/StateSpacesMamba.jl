@@ -1,13 +1,11 @@
-# op(x, y) = x + y
-# GPUArrays.neutral_element(::typeof(op), ::Type{T}) where T = zero(T)
-
-# Scan function for SSM, unstable implementation 
-# SSM equations are:
-# h′ = Ā * h + B̄ * x
-# y = C̄ * h′
 using Flux
 using OMEinsum
 
+# SSM equations are:
+# h′ = Ā * h + B̄ * x
+# y = C̄ * h′
+
+# This is higly unstable
 function selective_scan(x, Δ, A, B, C)
     d, l, b = size(x)
     n = size(A, 2)
@@ -48,11 +46,4 @@ function associative_selective_scan(x, Δ, A, B, C; mode=:cumsum, eps = 1e-12)
     return y
 end
 
-#= elseif mode == :logcumsumexp
-    B̄x_log = complex_log(B̄x)
-    Ā_cumsum = cumsum(Ā, dims=3) # cumulative sums on the l dimension
-    h_log = logcumsumexp(B̄x_log - Ā_cumsum, dims=3) + Ā_cumsum
-    h = exp.(real.(h_log)) .* cos.(imag.(h_log))
-    @ein y[d, l, b] := h[d, n, l, b] * C[n, l, b]
-end =#
 

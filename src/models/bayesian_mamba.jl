@@ -99,7 +99,7 @@ function bayes_by_backprop_loss(posterior::VariationalPosterior, prior, sampled_
     var_loss = neg_log_likelihood .+ kl_loss ./ num_batches
 end
 
-#= model = MambaGPT(128) |> f32
+#= model = MambaTextGenerator(128) |> f32
 posterior = VariationalPosterior(model)
 prior = GaussianMixturePrior(0.75, 0.001, 0.75)
 

@@ -1,30 +1,25 @@
 include("../models/mamba.jl")
 include("../models/transformer.jl")
 
-# deprecated
-#= models = Dict(
-	"transformer" => TransformerGPT(alphabet, seq_len, n_embed = 512, n_layers = 6), # 1987139 parameters
-	"transformer_with_dropout" => TransformerGPT(alphabet, seq_len, n_embed = 512, n_layers = 6, dropout = 0.1),
-	"mamba" => MambaGPT(vocab_size, embed_dim = 128, N = 16, n_layers = 6), # 1927859 parameters
-	"mamba_with_dropout" => MambaGPT(vocab_size, embed_dim = 128, N = 16, n_layers = 6, dropout = 0.1),
-	"transformer_small" => TransformerGPT(alphabet, seq_len, n_embed = 256, n_layers = 3),
-	"mamba_small" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers = 3),
-	"mamba_small_with_dropout" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers = 3, dropout = 0.1),
-	"bayesian_mamba" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers = 3),
-) =#
+function get_model(p; vocab = nothing)
+	
+	if !isnothing(vocab)
+		vocab_size = length(vocab)
+	end
 
-function get_model(vocab, hp)
-	vocab_size = length(vocab)
-
-	if hp["dataset"]=="lra_retrieval" && hp["model_name"]=="mamba"
-		model = MambaDualEncoder(vocab_size; embed_dim = hp["embed_dim"], N = hp["N"], n_layers = hp["n_layers"], dropout = hp["dropout"], ssm_dropout=hp["ssm_dropout"])
-	elseif hp["model_name"] == "transformer"
-        model = TransformerGPT(vocab, hp["seq_len"], n_embed = hp["embed_dim"], n_layers = hp["n_layers"])
-    elseif hp["model_name"] == "mamba"
-        model = MambaGPT(vocab_size, embed_dim = hp["embed_dim"], N = hp["N"], n_layers = hp["n_layers"], dropout = hp["dropout"],
-            ssm_dropout=hp["ssm_dropout"])
+	if p["dataset"]=="lra_retrieval" && p["model_name"]=="mamba"
+		model = MambaDualEncoder(vocab_size; embed_dim = p["embed_dim"], N = p["N"], n_layers = p["n_layers"], dropout = p["dropout"], 
+			ssm_dropout=p["ssm_dropout"], use_A_dropout=p["use_A_dropout"], use_cuda_scan=p["use_cuda_scan"] )
+	elseif p["dataset"]=="shakespeare" && params["model_name"] == "transformer"
+        model = TransformerGPT(vocab, params["seq_len"], n_embed = p["embed_dim"], n_layers = p["n_layers"])
+    elseif p["dataset"]=="shakespeare" && p["model_name"] == "mamba"
+        model = MambaTextGenerator(vocab_size, embed_dim = p["embed_dim"], N = p["N"], n_layers = p["n_layers"], dropout = p["dropout"],
+            ssm_dropout=p["ssm_dropout"], use_A_dropout=p["use_A_dropout"], use_cuda_scan=p["use_cuda_scan"])
+	elseif p["dataset"]=="mnist" && p["model_name"] == "mamba"
+		model = MambaClassifier(p["input_dim"], 10; embed_dim = p["embed_dim"],  N = p["N"], n_layers = p["n_layers"], dropout = p["dropout"],
+			ssm_dropout=p["ssm_dropout"], use_A_dropout=p["use_A_dropout"], use_cuda_scan=p["use_cuda_scan"] )
     else
-        error("model $(hp["model_name"]) is not implemented yet")
+        error("model $(p["model_name"]) is not implemented for dataset $(p["dataset"])")
     end
 	return model
 end

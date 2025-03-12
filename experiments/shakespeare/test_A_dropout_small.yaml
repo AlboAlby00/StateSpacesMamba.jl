@@ -20,4 +20,6 @@ save_model: true
 
 num_epochs: 100
 num_iterations: 3
+
 use_A_dropout: [false, true]
+use_cuda_scan: true

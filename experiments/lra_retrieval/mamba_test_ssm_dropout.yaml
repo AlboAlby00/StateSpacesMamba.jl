@@ -21,6 +21,7 @@ save_csv: true
 save_model: true
 
 use_A_dropout: true
+use_cuda_scan: true
 
 num_iterations: 1
 num_epochs: 10

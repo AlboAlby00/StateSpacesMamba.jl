@@ -90,7 +90,7 @@ end
 
 
 device = gpu_device()
-use_mlflow = true
+use_mlflow = false
 
 if use_mlflow
 	MLF = MLFlow("http://localhost:8080/api")
@@ -98,7 +98,7 @@ end
 
 # Run for multiple models
 for experiment in ["test_A_dropout"]
-	experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
+	experiment_yaml = YAML.load_file("experiments/shakespeare/$experiment.yaml")
 
 	experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
 
@@ -115,7 +115,7 @@ for experiment in ["test_A_dropout"]
 			set_seed(iteration)
 			println("start iteration $iteration")
 
-			model = get_model(alphabet, params) |> f32 |> device
+			model = get_model(params; vocab=alphabet) |> f32 |> device
 			println("model for experiment '$experiment' has $(count_params(model)) parameters")
 
             run_name = "iteration=$iteration, $desc"

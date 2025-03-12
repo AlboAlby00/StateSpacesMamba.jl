@@ -108,14 +108,7 @@ opt_state = Flux.setup(Flux.Adam(lr), model)
     for (x, y) in test_loader
         y = y |> cpu
         logits = model(x) |> cpu # move to CPU # 1, l, b
-        predictions = dropdims(argmax(logits, dims=1), dims=1) # l, b
-        predictions_last_pixel = predictions[end, :]
-        # convert CartesianIndex matrix to int matrix
-        temp = zeros(Int, size(predictions_last_pixel))
-        for idx in eachindex(predictions_last_pixel)
-            temp[idx] = Int(predictions_last_pixel[idx][1] - 1)  # Extract and convert to Int
-        end
-        accuracy = sum(temp .== y[end, :]) / length(temp)
+        accuracy = get_accuracy_in_classification_task(logits)
         push!(accuracy_list, accuracy)
         next!(test_progress; showvalues=[("Epoch ", epoch), ("Accuracy ", mean(accuracy_list))])
     end

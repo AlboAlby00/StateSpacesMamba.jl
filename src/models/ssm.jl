@@ -14,7 +14,7 @@ struct SSM
     project_x_to_C::Dense
     project_Δ::Dense # Project Δ from Δrank to D in order to have the correct size to perform discretization
     dropout::Dropout
-    logA_dropout::S4DRealDropout
+    logA_dropout::Union{Dropout, S4DRealDropout}
     scan::Function
 end
 
