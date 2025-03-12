@@ -13,10 +13,13 @@ include("../models/transformer.jl")
 	"bayesian_mamba" => MambaGPT(vocab_size, embed_dim = 128, N = 8, n_layers = 3),
 ) =#
 
-function get_model(alphabet, hp)
-	vocab_size = length(alphabet)
-    if hp["model_name"] == "transformer"
-        model = TransformerGPT(alphabet, hp["seq_len"], n_embed = hp["embed_dim"], n_layers = hp["n_layers"])
+function get_model(vocab, hp)
+	vocab_size = length(vocab)
+
+	if hp["dataset"]=="lra_retrieval" && hp["model_name"]=="mamba"
+		model = MambaDualEncoder(vocab_size; embed_dim = hp["embed_dim"], N = hp["N"], n_layers = hp["n_layers"], dropout = hp["dropout"], ssm_dropout=hp["ssm_dropout"])
+	elseif hp["model_name"] == "transformer"
+        model = TransformerGPT(vocab, hp["seq_len"], n_embed = hp["embed_dim"], n_layers = hp["n_layers"])
     elseif hp["model_name"] == "mamba"
         model = MambaGPT(vocab_size, embed_dim = hp["embed_dim"], N = hp["N"], n_layers = hp["n_layers"], dropout = hp["dropout"],
             ssm_dropout=hp["ssm_dropout"])

@@ -1,17 +1,18 @@
 # total params: 1987139
 # model params
 model_name: mamba
-embed_dim: 256
+dataset: lra_retrieval
+embed_dim: 128
 N: 16
-n_layers: 6
+n_layers: 4
 dropout: 0.1
 ssm_dropout: 0.1
 # other hyperparameters
-data_to_use_percent: 1.0
-train_batch_size: 64
-test_batch_size: 64
-seq_len: 256
-num_epochs: 150
+data_to_use_percent: 0.1
+train_batch_size: 32
+test_batch_size: 32
+seq_len: 4000
+num_epochs: 10
 initial_lr: 1e-3
 init_fin_lr_ratio: 0.1
 
