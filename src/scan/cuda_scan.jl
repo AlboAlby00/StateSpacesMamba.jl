@@ -23,7 +23,6 @@ function hillis_steele_scan!(t1, t2, op, tid, block_dim, reversed)
                 t1_temp, t2_temp = op((t1_temp, t2_temp), (t1[tid-offset], t2[tid-offset]))
             end
         end
-        sync_threads()
         t1[tid], t2[tid] = t1_temp, t2_temp
         sync_threads()
         offset *= 2
@@ -227,7 +226,7 @@ function reduce!(M::CuDeviceArray{T}, M0::CuDeviceArray{T}, reversed) where {T}
 end
 
 # K is the number of threads per block
-function cuda_scan(X, Δ, A, B, C; K=512, compute_backward=false, w=nothing)
+function cuda_scan(X, Δ,  A, B, C; K=512, compute_backward=false, w=nothing)
     d, l, b = size(X)
     n = size(A, 2)
     blocks = ceil(Int, l / K)
@@ -239,13 +238,13 @@ function cuda_scan(X, Δ, A, B, C; K=512, compute_backward=false, w=nothing)
     dX, dA, dB, dC, dΔ, dH = CUDA.zeros(size(X)), CUDA.zeros(size(A)), CUDA.zeros(size(B)), CUDA.zeros(size(C)), CUDA.zeros(size(Δ)), CUDA.zeros(size(H))
     shmem_size = (4 * K + 1) * sizeof(Float32)
 
-    CUDA.@sync CUDA.@cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
+    CUDA.@cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
         X, dX, A, dA, B, dB, C, dC, Δ, dΔ, Y, dY, H0, dH0, H, dH, FIRST, compute_backward)
 
-    CUDA.@sync CUDA.@cuda threads = (1, blocks, 1) blocks = (n * d, 1, b) shmem = 2 * blocks * sizeof(Float32) reduce!(H, H0, false)
-    CUDA.@sync CUDA.@cuda threads = (1, blocks, 1) blocks = (n * d, 1, b) shmem = 2 * blocks * sizeof(Float32) reduce!(dH, dH0, true)
+	CUDA.@cuda threads = (1, blocks, 1) blocks = (n * d, 1, b) shmem = 2 * blocks * sizeof(Float32) reduce!(H, H0, false)
+    CUDA.@cuda threads = (1, blocks, 1) blocks = (n * d, 1, b) shmem = 2 * blocks * sizeof(Float32) reduce!(dH, dH0, true)
 
-    CUDA.@sync CUDA.@cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
+    CUDA.@cuda threads = (1, K, 1) blocks = (n * d, blocks, b) shmem = shmem_size cuda_ssm!(
         X, dX, A, dA, B, dB, C, dC, Δ, dΔ, Y, dY, H0, dH0, H, dH, SECOND, compute_backward)
 
     return compute_backward ? (Y, (dX, dΔ, dA, dB, dC)) : Y
@@ -264,11 +263,11 @@ function ChainRulesCore.rrule(::typeof(cuda_scan), X, Δ, A, B, C; K=512)
 end
 
 
-#= K = 32
+#= K = 512
 BATCH_SIZE = 32
 N = 16
 D = 32
-SEQLEN = 255
+SEQLEN = 2873
 
 X = CuArray(repeat(Float32.(1:SEQLEN)', D, 1, BATCH_SIZE))
 
@@ -279,6 +278,15 @@ C = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE)
 Δ = CUDA.rand(Float32, D, SEQLEN, BATCH_SIZE) .* 0.01f0
 
 # check forward is equivalent
+Q = associative_selective_scan(X, Δ, A, B, C)
+Y = cuda_scan(X, Δ, A, B, C; compute_backward=false, K=K)
+
+alpha = 0.1f0
+A = CUDA.rand(Float32, D, N) .* alpha
+B = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE) .- alpha
+C = CUDA.rand(Float32, N, SEQLEN, BATCH_SIZE)
+Δ = CUDA.rand(Float32, D, SEQLEN, BATCH_SIZE) .* 0.01f0
+
 CUDA.@time Q = associative_selective_scan(X, Δ, A, B, C)
 CUDA.@time Y = cuda_scan(X, Δ, A, B, C; compute_backward=false, K=K)
 @assert isapprox(Array(Q), Array(Y), rtol=0.1)
@@ -287,17 +295,15 @@ println("---")
 
 # check backward is equivalent
 associative_selective_scan_loss = (X, Δ, A, B, C) -> sum(associative_selective_scan(X, Δ, A, B, C))
-CUDA.@time Yg = Zygote.gradient(associative_selective_scan_loss, X, Δ, A, B, C)
+Yg = Zygote.gradient(associative_selective_scan_loss, X, Δ, A, B, C)
+CUDA.@time  Yg = Zygote.gradient(associative_selective_scan_loss, X, Δ, A, B, C)
 
 cuda_scan_loss = (X, Δ, A, B, C) -> sum(cuda_scan(X, Δ, A, B, C; K=K))
-CUDA.@time Qg = Zygote.gradient(cuda_scan_loss, X, Δ, A, B, C)
-
-println(Yg[2][1, 1:31, 1])
-println(Qg[2][1, 1:31, 1])
+Qg = Zygote.gradient(cuda_scan_loss, X, Δ, A, B, C)
+CUDA.@time  Qg = Zygote.gradient(cuda_scan_loss, X, Δ, A, B, C)
 
 for (S, T) in zip(Yg, Qg)
     @assert isapprox(Array(S), Array(T), rtol=0.1)
 end
 
-println("---")
- =#
+println("---") =#
