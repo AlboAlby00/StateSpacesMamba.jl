@@ -33,7 +33,7 @@ function get_vocab(datasets; min_freq = 10)
 	return sort(vocab)
 end
 
-function tokenize_char_level(strs, max_length = 4000)::Matrix{Char}
+function tokenize_char_level(strs; max_length = 4000)::Matrix{Char}
 	truncated = [length(s) > max_length ? SubString(s, 1, max_length) : s for s in strs]
 	char_matrix = fill(' ', max_length, length(truncated))
 	for i in eachindex(truncated)
@@ -100,8 +100,8 @@ function get_lra_retrieval(; seq_len = 4000, data_to_use_percent = 1, data_folde
 				parts = split(line, '\t')
 				trainY[i] = parse(Float32, parts[1])
 
-				tokenized_text_1 = tokenize_char_level([parts[4]])  # Character matrix (1 row)
-				tokenized_text_2 = tokenize_char_level([parts[5]])
+				tokenized_text_1 = tokenize_char_level([parts[4]]; max_length=seq_len)  # Character matrix (1 row)
+				tokenized_text_2 = tokenize_char_level([parts[5]]; max_length=seq_len)
 
 				train_text_1[1:length(tokenized_text_1), i] = tokenized_text_1
 				train_text_2[1:length(tokenized_text_2), i] = tokenized_text_2
@@ -114,8 +114,8 @@ function get_lra_retrieval(; seq_len = 4000, data_to_use_percent = 1, data_folde
 		validation_data = readdlm("$tsv_data_folder/new_aan_pairs.eval.tsv", '\t', header = false)
 
 		validationY = validation_data[:, 1]
-		validation_text_1 = tokenize_char_level(validation_data[:, 4])
-		validation_text_2 = tokenize_char_level(validation_data[:, 5])
+		validation_text_1 = tokenize_char_level(validation_data[:, 4]; max_length=seq_len)
+		validation_text_2 = tokenize_char_level(validation_data[:, 5]; max_length=seq_len)
 
 		println("Validation dataset loaded.")
 
@@ -158,6 +158,8 @@ function get_lra_retrieval(; seq_len = 4000, data_to_use_percent = 1, data_folde
 
 	train_split = floor(Int, size(train_text_1, 2) * data_to_use_percent)
 	validation_split = floor(Int, size(validation_text_1, 2) * data_to_use_percent)
+
+	("Data loaded")
 
 	return (
 		vocab,
