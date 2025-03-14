@@ -1,116 +1,151 @@
-using Flux, Optimisers, ProgressMeter
-using Statistics
-using MLDatasets
-using CUDA
+using Flux, Optimisers, ProgressMeter, MLFlowClient
+using Statistics, MLDatasets, CUDA, Revise, Plots, DelimitedFiles, BSON, YAML
 
 CUDA.allowscalar(false)
 
-using Revise
-
-include("models/mamba.jl")
-include("utils/common.jl")
-using .MambaLayer
-Revise.track("models/mamba.jl")
-
-# hyperparameters
-train_batch_size = 64
-test_batch_size = 64
-epochs = 1000
-device = gpu_device()
-lr = 0.001
-model_name = "transformer"
-
-n_classes = 10
-input_dim = 1
-
-lstm_hidden_size = 128
-
-n_layers = 3
-mamba_block_output_dim = 128
-expand = 128÷input_dim
-N = 16
-
-models = Dict(
-    "lstm" => Chain(
-        LSTM(input_dim => lstm_hidden_size),
-        SkipConnection(LSTM(lstm_hidden_size => lstm_hidden_size), +),
-        SkipConnection(LSTM(lstm_hidden_size => lstm_hidden_size), +),
-        Dense(lstm_hidden_size => lstm_hidden_size, relu),
-        Dense(lstm_hidden_size => n_classes, identity),
-    ),
-    "mamba" => MambaLayer.Mamba(input_dim, n_classes, mamba_block_output_dim=mamba_block_output_dim, expand=expand, N=N, n_layers=n_layers)
-)
-
-# Print the number of parameters for each model
-for (name, model) in models
-    println("Number of parameters of model $name is $(count_params(model))")
-end
-
-model = models[model_name] |> device |> f32
+include("src/utils/mnist.jl")
+include("src/utils/common.jl")
+include("src/utils/models.jl")
+include("src/utils/params.jl")
 
 
-# create split mnist dataloader
+function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experiment_id=nothing, run_name="NO NAME")
 
-# train loader
-train_images, train_labels = MNIST(split=:train)[:]
-n_train_images = size(train_images)[end]
-train_sequences = Float32.(reshape(train_images, input_dim, 28 * 28 ÷ input_dim, n_train_images)) # shape is (d, l, b) d -> feature dimension, l -> sequence length, b -> batch size
-train_labels = Int32.(repeat(train_labels', outer=(28 * 28 ÷ input_dim, 1)))
-train_loader = Flux.DataLoader((train_sequences, train_labels), batchsize=train_batch_size, shuffle=true, partial=false) |> device
+    lr_decay_factor = (hp["init_fin_lr_ratio"])^(1 / hp["num_epochs"])
 
-for (x, y) in train_loader
-    @assert size(x) == (input_dim, 28 * 28 / input_dim, train_batch_size)
-end
-
-# test loader
-test_images, test_labels = MNIST(split=:test)[:]
-n_test_images = size(test_images)[end]
-test_sequences = Float32.(reshape(test_images, input_dim, 28 * 28 ÷ input_dim, n_test_images))
-test_labels = Int32.(repeat(test_labels', outer=(28 * 28 ÷ input_dim, 1)))
-test_loader = Flux.DataLoader((test_sequences, test_labels), batchsize=test_batch_size, partial=false) |> device
-
-for (x, y) in test_loader
-    @assert size(x) == (input_dim, 28 * 28 / input_dim, test_batch_size)
-end
-
-opt_state = Flux.setup(Flux.Adam(lr), model)
-
-@showprogress "Training progress..." for epoch in 1:epochs # Training loop
-
-    # Training loop
-    loss_moving_avg = nothing
-    α = 0.05
-
-    train_progress = Progress(length(train_loader))
-    for (x, y) in train_loader
-
-        function criterion(logits, y)
-            onehot_y = Flux.onehotbatch(y, 0:n_classes-1)
-            Flux.Losses.logitcrossentropy(logits, onehot_y)
+    if !isnothing(mlflow_experiment_id)
+        exprun = createrun(MLF, mlflow_experiment_id; start_time=get_unix_time())
+        # Log params
+        for (name, value) in hp
+            logparam(MLF, exprun, name, string(value))
         end
-
-        loss, grads = Flux.withgradient(m -> criterion(m(x), y), model)
-        Flux.update!(opt_state, model, grads[1])
-
-        # Update moving average of the loss
-        if loss_moving_avg === nothing
-            loss_moving_avg = loss
-        else
-            loss_moving_avg = α * loss + (1 - α) * loss_moving_avg
-        end
-
-        next!(train_progress; showvalues=[("Epoch ", epoch), ("Loss ", loss_moving_avg)])
     end
 
-    # Validation loop
-    accuracy_list = []
-    test_progress = Progress(length(test_loader))
-    for (x, y) in test_loader
-        y = y |> cpu
-        logits = model(x) |> cpu # move to CPU # 1, l, b
-        accuracy = get_accuracy_in_classification_task(logits)
-        push!(accuracy_list, accuracy)
-        next!(test_progress; showvalues=[("Epoch ", epoch), ("Accuracy ", mean(accuracy_list))])
+    opt = Optimisers.Adam(hp["initial_lr"])
+    opt_state = Optimisers.setup(opt, model)
+
+    best_model = nothing
+    best_validation_loss = Inf
+
+    test_losses = []
+    train_losses = []
+
+    function criterion(logits, y)
+        onehot_y = Flux.onehotbatch(y, 0:9)
+        Flux.Losses.logitcrossentropy(logits, onehot_y)
+    end
+
+    for epoch in 1:hp["num_epochs"]
+
+        new_lr = hp["initial_lr"] * lr_decay_factor^(epoch - 1)
+        Optimisers.adjust!(opt_state, new_lr)
+
+        Flux.testmode!(model)
+        test_progress = Progress(length(test_loader), desc="Validating Epoch $epoch")
+        losses = []
+        accuracies = []
+        for (x, y) in test_loader
+            y = y |> cpu
+            logits = model(x) |> cpu
+            validation_loss = criterion(logits, y)
+            validation_accuracy = get_accuracy_in_classification_task(logits, y)
+            if isnan(validation_loss) || isnan(validation_accuracy)
+                println("NaN value during validation")
+                println(logits)
+                continue
+            end
+            push!(losses, validation_loss)
+            push!(accuracies, validation_accuracy)
+            next!(test_progress; showvalues=[("Mean Loss", mean(losses)), ("Accuracy", mean(accuracies))])
+        end
+        epoch_validation_loss = mean(losses)
+        epoch_validation_accuracy = mean(accuracies)
+        if !isnothing(mlflow_experiment_id)
+            logmetric(MLF, exprun, "validation loss", Float64(epoch_validation_loss))
+            logmetric(MLF, exprun, "validation accuracy", Float64(epoch_validation_accuracy))
+        end
+        push!(test_losses, epoch_validation_loss)
+
+        if epoch_validation_loss < best_validation_loss
+            best_test_loss = epoch_validation_loss
+            best_model = deepcopy(model)
+        end
+
+        Flux.trainmode!(model)
+        loss_moving_avg = nothing
+        α = 0.05
+        train_progress = Progress(length(train_loader), desc="Training Epoch $epoch")
+        for (x, y) in train_loader
+
+            loss, grads = Flux.withgradient(m -> criterion(m(x), y), model)
+            if isnan(loss)
+                print("NaN value")
+                model = best_model
+                continue
+            end
+            Flux.update!(opt_state, model, grads[1])
+
+            if loss_moving_avg === nothing
+                loss_moving_avg = loss
+            else
+                loss_moving_avg = α * loss + (1 - α) * loss_moving_avg
+            end
+            push!(train_losses, loss)
+            next!(train_progress; showvalues=[("Loss", loss_moving_avg)])
+            if !isnothing(mlflow_experiment_id)
+                logmetric(MLF, exprun, "train loss", Float64(loss))
+            end
+        end
+    end
+
+    if !isnothing(mlflow_experiment_id)
+        updaterun(MLF, exprun; status=MLFlowClient.FINISHED, end_time=get_unix_time(), run_name=run_name)
+    end
+
+    return train_losses, test_losses, best_model
+end
+
+
+device = gpu_device()
+use_mlflow = true
+
+if use_mlflow
+    MLF = MLFlow("http://localhost:8080/api")
+end
+
+# Run for multiple models
+for experiment in ["mnist/mamba_ssm_dropout_evaluation"]
+    experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
+
+    experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
+
+    for (desc, params) in generate_combinations(experiment_yaml)
+
+        println(desc)
+
+        train_loader, validation_loader = get_mnist_dataloaders(device; input_dim=params["input_dim"],
+            train_batch_size=params["train_batch_size"], test_batch_size=params["test_batch_size"])
+
+        for iteration in 1:params["num_iterations"]
+            set_seed(iteration)
+            println("start iteration $iteration")
+
+            model = get_model(params) |> f32 |> device
+            println("model for experiment '$experiment' has $(count_params(model)) parameters")
+
+            run_name = "iteration=$iteration, $desc"
+
+            train_losses, validation_losses, best_model = train_and_evaluate(params, train_loader, validation_loader, model; mlflow_experiment_id=experiment_id, run_name=run_name)
+
+            if params["save_csv"]
+                save_losses(experiment, train_losses, validation_losses, iteration)
+            end
+
+            if params["save_model"]
+                save_model_weights(best_model, experiment, iteration)
+            end
+        end
+
     end
 
 end

@@ -23,14 +23,15 @@ function MambaEncoder(embed_dim, n_layers, n_fc_layers, N, expand, kernel_size, 
     )
 end
 
-function MambaClassifier(in, out; embed_dim=64, n_layers=3, N=16, kernel_size=4, n_fc_layers=1, expand=2,
+function MambaClassifier(in, out; embed_dim=64, n_layers=3, N=16, kernel_size=5, expand=2,
     dropout=0.0, ssm_dropout=0.0, use_A_dropout=true, use_cuda_scan=true)
     model = Chain(
-        MambaBlock(in, embed_dim, D = embed_dim, N = N, dropout = dropout, use_cuda_scan=use_cuda_scan),
-        [MambaBlock(embed_dim, embed_dim, D=embed_dim * expand, N=N, Δrank=32, dropout=dropout, kernel_size=kernel_size,
-            ssm_dropout=ssm_dropout, use_A_dropout=use_A_dropout, use_cuda_scan=use_cuda_scan) for _ in 1:n_layers-1]...,
-        Dense(embed_dim => out),
-    )
+		MambaBlock(in, embed_dim, D = embed_dim * expand, N = N, kernel_size = kernel_size, dropout = dropout, ssm_dropout = ssm_dropout, Δrank = embed_dim ÷ 8,
+            use_A_dropout = use_A_dropout, use_cuda_scan = use_cuda_scan, use_causal_conv = false),
+		[MambaBlock(embed_dim, embed_dim, D = embed_dim * expand, N = N, Δrank = embed_dim ÷ 8, dropout = dropout, kernel_size = kernel_size, 
+            ssm_dropout = ssm_dropout, use_A_dropout = use_A_dropout, use_cuda_scan = use_cuda_scan, use_normalization=false, use_causal_conv = false) for _ in 1:n_layers-1]...,
+		Dense(embed_dim => out),
+	)
     return model
 end
 
@@ -54,7 +55,7 @@ struct MambaDualEncoder
 end
 Flux.@layer MambaDualEncoder trainable = (embedding, shared_encoder, logit_layer)
 
-function MambaDualEncoder(vocab_size; embed_dim=128, n_layers=3, n_fc_layers=2, N=16, expand=2, kernel_size=4,
+function MambaDualEncoder(vocab_size; embed_dim=128, n_layers=3, n_fc_layers=2, N=16, expand=2, kernel_size=5,
     dropout=0.0, ssm_dropout=0.0, use_A_dropout=true, use_cuda_scan=true)
 
     embedding = Embedding(vocab_size, embed_dim)
@@ -76,35 +77,43 @@ struct MambaBlock
     norm::LayerNorm
     project_input::Dense
     project_res::Dense
-    causal_conv_1d::Conv
+    conv_1d::Conv
     ssm::SSM
     project_output::Dense
     dropout::Dropout
+    use_normalization::Bool
 end
 
 # Constructor for MambaBlock
-function MambaBlock(input_dim, output_dim; D=64, N=16, kernel_size=4, dropout=0.0, Δrank=32, ssm_dropout=0.0, use_A_dropout=true, use_cuda_scan=true)
+function MambaBlock(input_dim, output_dim; D=64, N=16, kernel_size=4, dropout=0.0, Δrank=32, ssm_dropout=0.0, use_A_dropout=true, use_cuda_scan=true, use_normalization=true, use_causal_conv=true)
     norm = LayerNorm(input_dim, relu)
     project_input = Dense(input_dim => D)
     project_res = Dense(input_dim => D)
-    # pad defined so that input D == output D and applied only on the left to ensure no peeking in the future
-    causal_conv_1d = Conv((kernel_size,), D => D, relu, pad=(kernel_size - 1, 0))
+    if use_causal_conv
+        # pad defined so that input D == output D and applied only on the left to ensure no peeking in the future
+        conv_1d = Conv((kernel_size,), D => D, relu, pad=(kernel_size - 1, 0))
+    else
+        @assert kernel_size % 2 == 1 "Kernel size must be odd if not using causal convolution"
+        conv_1d = Conv((kernel_size,), D => D, relu, pad=(kernel_size ÷ 2,)) # pad defined so that input D == output D, kernel size must be odd
+    end
     ssm = SSM(D=D, N=N, Δrank=Δrank, ssm_dropout=ssm_dropout, use_A_dropout=use_A_dropout, use_cuda_scan=use_cuda_scan)
     project_output = Dense(D => output_dim)
     dropout = Dropout(dropout)
-    return MambaBlock(norm, project_input, project_res, causal_conv_1d, ssm, project_output, dropout)
+    return MambaBlock(norm, project_input, project_res, conv_1d, ssm, project_output, dropout, use_normalization)
 end
 
 # Forward pass for MambaBlock
 function (m::MambaBlock)(x)
 
     d, l, b = size(x)
-    x = m.norm(x)
+    if m.use_normalization
+        x = m.norm(x)
+    end
 
     out_project = m.project_input(x)
     # Conv layer requires size l, d, b but out_project size is d, l, b. We need to permute the dims
     out_project = permutedims(out_project, (2, 1, 3)) # permute l and d
-    out_conv = swish(m.causal_conv_1d(out_project))
+    out_conv = swish(m.conv_1d(out_project))
     out_conv = permutedims(out_conv, (2, 1, 3)) # permute d and l to return to original size
 
     out_ssm = swish(m.ssm(out_conv))
@@ -117,4 +126,4 @@ function (m::MambaBlock)(x)
     return m.dropout(out)
 end
 
-Flux.@layer MambaBlock trainable = (project_input, project_res, causal_conv_1d, ssm, project_output)
+Flux.@layer MambaBlock trainable = (project_input, project_res, conv_1d, ssm, project_output)
