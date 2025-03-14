@@ -13,7 +13,7 @@ train_batch_size: 64
 test_batch_size: 64
 
 num_epochs: 70
-initial_lr: 1e-4
+initial_lr: 1e-3
 init_fin_lr_ratio: 0.1
 
 save_csv: false

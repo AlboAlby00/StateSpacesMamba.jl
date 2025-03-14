@@ -1,4 +1,4 @@
-using Flux, Optimisers, ProgressMeter, MLFlowClient
+using Flux, Optimisers, ProgressMeter, MLFlowClient, Zygote
 using Statistics, MLDatasets, CUDA, Revise, Plots, DelimitedFiles, BSON, YAML
 
 CUDA.allowscalar(false)
@@ -7,7 +7,6 @@ include("src/utils/mnist.jl")
 include("src/utils/common.jl")
 include("src/utils/models.jl")
 include("src/utils/params.jl")
-
 
 function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experiment_id=nothing, run_name="NO NAME")
 
@@ -32,7 +31,7 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
 
     function criterion(logits, y)
         onehot_y = Flux.onehotbatch(y, 0:9)
-        Flux.Losses.logitcrossentropy(logits, onehot_y)
+        Flux.Losses.logitcrossentropy(logits[:,end,:], onehot_y)
     end
 
     for epoch in 1:hp["num_epochs"]
@@ -107,7 +106,7 @@ end
 
 
 device = gpu_device()
-use_mlflow = true
+use_mlflow = false
 
 if use_mlflow
     MLF = MLFlow("http://localhost:8080/api")

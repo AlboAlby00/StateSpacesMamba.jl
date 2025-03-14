@@ -88,7 +88,6 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
 	return train_losses, test_losses, best_model
 end
 
-
 device = gpu_device()
 use_mlflow = false
 

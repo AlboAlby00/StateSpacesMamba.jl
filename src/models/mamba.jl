@@ -27,7 +27,7 @@ function MambaClassifier(in, out; embed_dim=64, n_layers=3, N=16, kernel_size=5,
     dropout=0.0, ssm_dropout=0.0, use_A_dropout=true, use_cuda_scan=true)
     model = Chain(
 		MambaBlock(in, embed_dim, D = embed_dim * expand, N = N, kernel_size = kernel_size, dropout = dropout, ssm_dropout = ssm_dropout, Δrank = embed_dim ÷ 8,
-            use_A_dropout = use_A_dropout, use_cuda_scan = use_cuda_scan, use_causal_conv = false),
+            use_A_dropout = use_A_dropout, use_cuda_scan = use_cuda_scan, use_causal_conv = false, use_normalization=false),
 		[MambaBlock(embed_dim, embed_dim, D = embed_dim * expand, N = N, Δrank = embed_dim ÷ 8, dropout = dropout, kernel_size = kernel_size, 
             ssm_dropout = ssm_dropout, use_A_dropout = use_A_dropout, use_cuda_scan = use_cuda_scan, use_normalization=false, use_causal_conv = false) for _ in 1:n_layers-1]...,
 		Dense(embed_dim => out),
