@@ -5,11 +5,11 @@ CUDA.allowscalar(false)
 
 include("src/utils/shakespeare.jl")
 include("src/utils/common.jl")
-include("src/utils/models.jl")
+include("src/utils/get_functions.jl")
 include("src/utils/params.jl")
 
 
-function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experiment_id = nothing, run_name = "NO NAME")
+function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_experiment_id = nothing, run_name = "NO NAME")
 
 	lr_decay_factor = (hp["init_fin_lr_ratio"])^(1 / hp["num_epochs"])
 
@@ -25,9 +25,9 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
 	opt_state = Optimisers.setup(opt, model)
 
 	best_model = nothing
-	best_test_loss = Inf
+	best_validation_loss = Inf
 
-	test_losses = []
+	validation_losses = []
 	train_losses = []
 
 	for epoch in 1:hp["num_epochs"]
@@ -36,23 +36,23 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
 		Optimisers.adjust!(opt_state, new_lr)
 
 		Flux.testmode!(model)
-		test_progress = Progress(length(test_loader), desc = "Validating Epoch $epoch")
+		validation_progress = Progress(length(validation_loader), desc = "Validating Epoch $epoch")
 		losses = []
-		for (x, y) in test_loader
+		for (x, y) in validation_loader
 			y = y |> cpu
 			logits = model(x) |> cpu
 			validation_loss = Flux.Losses.logitcrossentropy(logits, y)
 			push!(losses, validation_loss)
-			next!(test_progress; showvalues = [("Mean Loss", mean(losses))])
+			next!(validation_progress; showvalues = [("Mean Loss", mean(losses))])
 		end
-		epoch_test_loss = mean(losses)
+		epoch_validation_loss = mean(losses)
 		if !isnothing(mlflow_experiment_id)
-			logmetric(MLF, exprun, "validation loss", Float64(epoch_test_loss))
+			logmetric(MLF, exprun, "validation loss", Float64(epoch_validation_loss))
 		end
-		push!(test_losses, epoch_test_loss)
+		push!(validation_losses, epoch_validation_loss)
 
-		if epoch_test_loss < best_test_loss
-			best_test_loss = epoch_test_loss
+		if epoch_validation_loss < best_validation_loss
+			best_validation_loss = epoch_validation_loss
 			best_model = deepcopy(model)
 		end
 
@@ -85,13 +85,13 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
 		updaterun(MLF, exprun; status=MLFlowClient.FINISHED, end_time = get_unix_time(), run_name = run_name)
 	end
 
-	return train_losses, test_losses, best_model
+	return train_losses, validation_losses, best_model
 end
 
+parsed_args = parse_commandline()
 device = gpu_device()
-use_mlflow = false
 
-if use_mlflow
+if parsed_args["use_mlflow"]
 	MLF = MLFlow("http://localhost:8080/api")
 end
 
@@ -99,7 +99,7 @@ end
 for experiment in ["test_A_dropout"]
 	experiment_yaml = YAML.load_file("experiments/shakespeare/$experiment.yaml")
 
-	experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
+	experiment_id = parsed_args["use_mlflow"] ? createexperiment(MLF, experiment) : nothing
 
 	for (desc, params) in generate_combinations(experiment_yaml)
 
@@ -108,7 +108,7 @@ for experiment in ["test_A_dropout"]
 		alphabet, trainX, trainY, testX, testY = get_tiny_shakespeare(seq_len = params["seq_len"], data_to_use_percent = params["data_to_use_percent"])
 
 		train_loader = Flux.DataLoader((trainX, trainY), batchsize = params["train_batch_size"], shuffle = true, partial = false) |> device
-		test_loader = Flux.DataLoader((testX, testY), batchsize = params["test_batch_size"], shuffle = false, partial = false) |> device
+		validation_loader = Flux.DataLoader((testX, testY), batchsize = params["validation_batch_size"], shuffle = false, partial = false) |> device
 
 		for iteration in 1:params["num_iterations"]
 			set_seed(iteration)
@@ -119,7 +119,7 @@ for experiment in ["test_A_dropout"]
 
             run_name = "iteration=$iteration, $desc"
 
-			train_losses, validation_losses, best_model = train_and_evaluate(params, train_loader, test_loader, model; mlflow_experiment_id = experiment_id, run_name=run_name)
+			train_losses, validation_losses, best_model = train_and_evaluate(params, train_loader, validation_loader, model; mlflow_experiment_id = experiment_id, run_name=run_name)
 
 			if params["save_csv"]
 				save_losses(experiment, train_losses, validation_losses, iteration)

@@ -1,3 +1,6 @@
+using Pkg
+Pkg.activate(".")
+
 using Flux, Optimisers, ProgressMeter, MLFlowClient, Zygote
 using Statistics, MLDatasets, CUDA, Revise, Plots, DelimitedFiles, BSON, YAML
 
@@ -5,10 +8,10 @@ CUDA.allowscalar(false)
 
 include("src/utils/mnist.jl")
 include("src/utils/common.jl")
-include("src/utils/models.jl")
+include("src/utils/get_functions.jl")
 include("src/utils/params.jl")
 
-function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experiment_id=nothing, run_name="NO NAME")
+function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_experiment_id=nothing, run_name="NO NAME")
 
     lr_decay_factor = (hp["init_fin_lr_ratio"])^(1 / hp["num_epochs"])
 
@@ -26,7 +29,7 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
     best_model = nothing
     best_validation_loss = Inf
 
-    test_losses = []
+    validation_losses = []
     train_losses = []
 
     function criterion(logits, y)
@@ -40,10 +43,10 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
         Optimisers.adjust!(opt_state, new_lr)
 
         Flux.testmode!(model)
-        test_progress = Progress(length(test_loader), desc="Validating Epoch $epoch")
+        validation_progress = Progress(length(validation_loader), desc="Validating Epoch $epoch")
         losses = []
         accuracies = []
-        for (x, y) in test_loader
+        for (x, y) in validation_loader
             y = y |> cpu
             logits = model(x) |> cpu
             validation_loss = criterion(logits, y)
@@ -55,7 +58,7 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
             end
             push!(losses, validation_loss)
             push!(accuracies, validation_accuracy)
-            next!(test_progress; showvalues=[("Mean Loss", mean(losses)), ("Accuracy", mean(accuracies))])
+            next!(validation_progress; showvalues=[("Mean Loss", mean(losses)), ("Accuracy", mean(accuracies))])
         end
         epoch_validation_loss = mean(losses)
         epoch_validation_accuracy = mean(accuracies)
@@ -63,10 +66,10 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
             logmetric(MLF, exprun, "validation loss", Float64(epoch_validation_loss))
             logmetric(MLF, exprun, "validation accuracy", Float64(epoch_validation_accuracy))
         end
-        push!(test_losses, epoch_validation_loss)
+        push!(validation_losses, epoch_validation_loss)
 
         if epoch_validation_loss < best_validation_loss
-            best_test_loss = epoch_validation_loss
+            best_validation_loss = epoch_validation_loss
             best_model = deepcopy(model)
         end
 
@@ -101,29 +104,30 @@ function train_and_evaluate(hp, train_loader, test_loader, model; mlflow_experim
         updaterun(MLF, exprun; status=MLFlowClient.FINISHED, end_time=get_unix_time(), run_name=run_name)
     end
 
-    return train_losses, test_losses, best_model
+    return train_losses, validation_losses, best_model
 end
 
 
 device = gpu_device()
-use_mlflow = false
 
-if use_mlflow
+parsed_args = parse_commandline()
+
+if parsed_args["use_mlflow"]
     MLF = MLFlow("http://localhost:8080/api")
 end
 
 # Run for multiple models
-for experiment in ["mnist/mamba_ssm_dropout_evaluation"]
+for experiment in parsed_args["experiment_list"]
     experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
 
-    experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
+    experiment_id = parsed_args["use_mlflow"] ? createexperiment(MLF, experiment) : nothing
 
     for (desc, params) in generate_combinations(experiment_yaml)
 
         println(desc)
 
         train_loader, validation_loader = get_mnist_dataloaders(device; input_dim=params["input_dim"],
-            train_batch_size=params["train_batch_size"], test_batch_size=params["test_batch_size"])
+            train_batch_size=params["train_batch_size"], validation_batch_size=params["validation_batch_size"])
 
         for iteration in 1:params["num_iterations"]
             set_seed(iteration)
