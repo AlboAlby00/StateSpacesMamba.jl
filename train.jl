@@ -25,10 +25,10 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
         end
     end
 
-    opt = Optimisers.Adam(hp["initial_lr"])
+    opt = Flux.Optimise.Optimiser(Flux.Optimise.ClipValue(1e-3), Flux.Optimise.Adam(hp["initial_lr"]))
     opt_state = Optimisers.setup(opt, model)
 
-    best_model = nothing
+    best_model = deepcopy(model)
     best_validation_loss = Inf
 
     validation_losses = []
@@ -50,6 +50,7 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
             validation_accuracy = get_accuracy(logits, y, hp["dataset"])
             if isnan(validation_loss) || isnan(validation_accuracy)
                 println("NaN value during validation")
+                model = best_model
                 continue
             end
             push!(losses, validation_loss)
@@ -76,6 +77,7 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
         for (x, y) in train_loader
 
             loss, grads = Flux.withgradient(m -> criterion(m(x), y), model)
+            
             if isnan(loss)
                 println("NaN value during Training")
                 model = best_model
@@ -113,6 +115,7 @@ end
 
 # Run for multiple models
 for experiment in parsed_args["experiment_list"]
+#for experiment in ["mnist/mamba_ssm_dropout_evaluation"]
     experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
 
     experiment_id = parsed_args["use_mlflow"] ? createexperiment(MLF, experiment) : nothing
