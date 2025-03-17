@@ -13,9 +13,9 @@ n_hidden: 2
 dropout: 0.0
 
 # other hyperparameters
-data_to_use_percent: 0.02
-train_batch_size: 2
-validation_batch_size: 2
+data_to_use_percent: 1.0
+train_batch_size: 32
+validation_batch_size: 32
 
 seq_len: 4000
 initial_lr: 0.05

@@ -11,7 +11,7 @@ ssm_dropout: 0.1
 # other hyperparameters
 data_to_use_percent: 1.0
 train_batch_size: 64
-test_batch_size: 64
+validation_batch_size: 64
 seq_len: 256
 num_epochs: 150
 initial_lr: 1e-3
@@ -22,3 +22,5 @@ save_model: true
 
 use_A_dropout: true
 use_cuda_scan: true
+
+num_iterations: 1

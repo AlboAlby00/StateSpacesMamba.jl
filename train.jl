@@ -1,15 +1,18 @@
-using Flux, Optimisers, ProgressMeter, MLFlowClient
+using Pkg
+Pkg.activate(".")
+
+using Flux, Optimisers, ProgressMeter, MLFlowClient, Zygote
 using Statistics, MLDatasets, CUDA, Revise, Plots, DelimitedFiles, BSON, YAML
 
 CUDA.allowscalar(false)
 
-include("src/utils/lra_retrieval.jl")
+include("src/utils/mnist.jl")
 include("src/utils/common.jl")
 include("src/utils/get_functions.jl")
 include("src/utils/params.jl")
 
-
-function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_experiment_id=nothing, run_name="NO NAME")
+function train_and_evaluate(hp, train_loader, validation_loader, model, criterion; 
+    mlflow_experiment_id=nothing, run_name="NO NAME")
 
     lr_decay_factor = (hp["init_fin_lr_ratio"])^(1 / hp["num_epochs"])
 
@@ -36,32 +39,30 @@ function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_e
         Optimisers.adjust!(opt_state, new_lr)
 
         Flux.testmode!(model)
-
         validation_progress = Progress(length(validation_loader), desc="Validating Epoch $epoch")
         losses = []
         accuracies = []
-
-        for (x1, x2, y) in validation_loader
-            l, _ = size(x1)
-            #y = repeat(reshape(y, 1, 1, :), 1, l, 1)  # Reshape and repeat so that size(y) == size(logits)
+        for (x, y) in validation_loader
             y = y |> cpu
-            logits = model(x1, x2) |> cpu
-            validation_loss = Flux.Losses.logitbinarycrossentropy(logits, y)
-
-            predictions = sigmoid.(logits[:, end, :]) .>= 0.5
-            acc = mean(predictions .== y[:, end, :])
-            push!(accuracies, acc)
+            logits = model(x) |> cpu
+            validation_loss = criterion(logits, y)
+            validation_accuracy = get_accuracy(logits, y, hp["dataset"])
+            if isnan(validation_loss) || isnan(validation_accuracy)
+                println("NaN value during validation")
+                println(logits)
+                continue
+            end
             push!(losses, validation_loss)
+            push!(accuracies, validation_accuracy)
             next!(validation_progress; showvalues=[("Mean Loss", mean(losses)), ("Accuracy", mean(accuracies))])
-
         end
         epoch_validation_loss = mean(losses)
         epoch_validation_accuracy = mean(accuracies)
-        push!(validation_losses, epoch_validation_loss)
         if !isnothing(mlflow_experiment_id)
             logmetric(MLF, exprun, "validation loss", Float64(epoch_validation_loss))
             logmetric(MLF, exprun, "validation accuracy", Float64(epoch_validation_accuracy))
         end
+        push!(validation_losses, epoch_validation_loss)
 
         if epoch_validation_loss < best_validation_loss
             best_validation_loss = epoch_validation_loss
@@ -70,18 +71,18 @@ function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_e
 
         Flux.trainmode!(model)
         loss_moving_avg = nothing
-        α = 0.5
+        α = 0.05
         train_progress = Progress(length(train_loader), desc="Training Epoch $epoch")
-        for (x1, x2, y) in train_loader
-            l, _ = size(x1)
+        for (x, y) in train_loader
 
-            loss, grads = Flux.withgradient(m -> Flux.Losses.logitbinarycrossentropy(m(x1, x2), y), model)
-            if loss == NaN
-                println("NaN value")
+            loss, grads = Flux.withgradient(m -> criterion(m(x), y), model)
+            if isnan(loss)
+                print("NaN value")
                 model = best_model
                 continue
             end
             Flux.update!(opt_state, model, grads[1])
+
             if loss_moving_avg === nothing
                 loss_moving_avg = loss
             else
@@ -104,27 +105,24 @@ end
 
 
 device = gpu_device()
-use_mlflow = true
+parsed_args = parse_commandline()
 
-if use_mlflow
+if parsed_args["use_mlflow"]
     MLF = MLFlow("http://localhost:8080/api")
 end
 
 # Run for multiple models
-for experiment in ["lra_retrieval/mamba_test_ssm_dropout_small_dataset"]
+for experiment in parsed_args["experiment_list"]
     experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
 
-    experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
+    experiment_id = parsed_args["use_mlflow"] ? createexperiment(MLF, experiment) : nothing
 
     for (desc, params) in generate_combinations(experiment_yaml)
 
         println(desc)
 
-        vocab, train_text_1, train_text_2, trainY, validation_text_1, validation_text_2, validationY =
-            get_lra_retrieval(data_to_use_percent=params["data_to_use_percent"], seq_len=params["seq_len"])
-
-        train_loader = Flux.DataLoader((train_text_1, train_text_2, trainY), batchsize=params["train_batch_size"], shuffle=true, partial=false) |> device
-        validation_loader = Flux.DataLoader((validation_text_1, validation_text_2, validationY), batchsize=params["validation_batch_size"], shuffle=false, partial=false) |> device
+        train_loader, validation_loader, vocab = get_dataloaders(params["dataset"], device; p=params)
+        criterion = get_criterion(params["dataset"])
 
         for iteration in 1:params["num_iterations"]
             set_seed(iteration)
@@ -134,7 +132,10 @@ for experiment in ["lra_retrieval/mamba_test_ssm_dropout_small_dataset"]
             println("model for experiment '$experiment' has $(count_params(model)) parameters")
 
             run_name = "iteration=$iteration, $desc"
-            train_losses, validation_losses, best_model = train_and_evaluate(params, train_loader, validation_loader, model; mlflow_experiment_id=experiment_id, run_name=run_name)
+
+            train_losses, validation_losses, best_model = train_and_evaluate(
+                params, train_loader, validation_loader, model, criterion; 
+                mlflow_experiment_id=experiment_id, run_name=run_name)
 
             if params["save_csv"]
                 save_losses(experiment, train_losses, validation_losses, iteration)
