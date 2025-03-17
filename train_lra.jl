@@ -43,7 +43,7 @@ function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_e
 
         for (x1, x2, y) in validation_loader
             l, _ = size(x1)
-            y = repeat(reshape(y, 1, 1, :), 1, l, 1)  # Reshape and repeat so that size(y) == size(logits)
+            #y = repeat(reshape(y, 1, 1, :), 1, l, 1)  # Reshape and repeat so that size(y) == size(logits)
             y = y |> cpu
             logits = model(x1, x2) |> cpu
             validation_loss = Flux.Losses.logitbinarycrossentropy(logits, y)
@@ -74,10 +74,10 @@ function train_and_evaluate(hp, train_loader, validation_loader, model; mlflow_e
         train_progress = Progress(length(train_loader), desc="Training Epoch $epoch")
         for (x1, x2, y) in train_loader
             l, _ = size(x1)
-            y = repeat(reshape(y, 1, 1, :), 1, l, 1)
+
             loss, grads = Flux.withgradient(m -> Flux.Losses.logitbinarycrossentropy(m(x1, x2), y), model)
             if loss == NaN
-                print("NaN value")
+                println("NaN value")
                 model = best_model
                 continue
             end
@@ -111,12 +111,14 @@ if use_mlflow
 end
 
 # Run for multiple models
-for experiment in ["mamba_test_ssm_dropout"]
-    experiment_yaml = YAML.load_file("experiments/lra_retrieval/$experiment.yaml")
+for experiment in ["lra_retrieval/mamba_test_ssm_dropout_small_dataset"]
+    experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
 
     experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
 
     for (desc, params) in generate_combinations(experiment_yaml)
+
+        println(desc)
 
         vocab, train_text_1, train_text_2, trainY, validation_text_1, validation_text_2, validationY =
             get_lra_retrieval(data_to_use_percent=params["data_to_use_percent"], seq_len=params["seq_len"])
@@ -129,9 +131,9 @@ for experiment in ["mamba_test_ssm_dropout"]
             println("start iteration $iteration")
 
             model = get_model(params; vocab=vocab) |> f32 |> device
+            println("model for experiment '$experiment' has $(count_params(model)) parameters")
 
             run_name = "iteration=$iteration, $desc"
-
             train_losses, validation_losses, best_model = train_and_evaluate(params, train_loader, validation_loader, model; mlflow_experiment_id=experiment_id, run_name=run_name)
 
             if params["save_csv"]

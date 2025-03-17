@@ -97,8 +97,8 @@ if use_mlflow
 end
 
 # Run for multiple models
-for experiment in ["test_A_dropout"]
-	experiment_yaml = YAML.load_file("experiments/shakespeare/$experiment.yaml")
+for experiment in ["shakespeare/transformer"]
+	experiment_yaml = YAML.load_file("experiments/$experiment.yaml")
 
 	experiment_id = use_mlflow ? createexperiment(MLF, experiment) : nothing
 
