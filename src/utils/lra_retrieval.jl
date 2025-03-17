@@ -73,12 +73,14 @@ end
 
 function get_lra_retrieval(; seq_len = 4000, data_to_use_percent = 1, data_folder = "data/lra_retrieval")
 
-	if !isdir("$data_folder")
+	if !isdir(data_folder)
 
 		println("No serialized data found")
+		mkpath(data_folder)
 
 		if !isdir("download/lra_release")
 			println("Dataset file not found.")
+			mkpath("download")
 			download_and_extract_dataset()
 		end
 
@@ -172,3 +174,4 @@ function get_lra_retrieval(; seq_len = 4000, data_to_use_percent = 1, data_folde
 	)
 
 end
+

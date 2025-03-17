@@ -69,7 +69,8 @@ function MambaDualEncoder(vocab_size; embed_dim = 128, n_layers = 3, n_fc_layers
 	return MambaDualEncoder(embedding, shared_encoder, classifier_head, dropout_layer)
 end
 
-function (m::MambaDualEncoder)(x1, x2)
+function (m::MambaDualEncoder)(x)
+    x1, x2 = x
 	out1 = m.shared_encoder(m.dropout(m.embedding(x1)))
 	out2 = m.shared_encoder(m.dropout(m.embedding(x2)))
 	out = m.classifier_head(out1, out2)

@@ -33,13 +33,13 @@ function get_tiny_shakespeare(; seq_len=64, test_percent=0.2, data_to_use_percen
     return (alphabet, trainX, trainY, testX, testY)
 end
 
-function generate(model, alphabet, seed, outlen, seqlen)
-    if isempty(seed)
+function generate_text(model, alphabet; output_len = 256, seq_len = 256, seed = nothing)
+    if isnothing(seed)
         seed = "_"
     end
     x = map(c -> findfirst(==(c), alphabet)::Int64, collect(seed))
-    while length(x) < outlen
-        tail = x[max(1, end-seqlen+1):end]
+    while length(x) < output_len
+        tail = x[max(1, end-seq_len+1):end]
         tail = reshape(tail, length(tail), 1)
         y = model(tail |> device) |> cpu
         p = softmax(y[:,end,1])

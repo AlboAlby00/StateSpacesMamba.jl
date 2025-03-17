@@ -1,5 +1,6 @@
 using Pkg
 Pkg.activate(".")
+Pkg.instantiate()
 
 using Flux, Optimisers, ProgressMeter, MLFlowClient, Zygote
 using Statistics, MLDatasets, CUDA, Revise, Plots, DelimitedFiles, BSON, YAML
@@ -49,7 +50,6 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
             validation_accuracy = get_accuracy(logits, y, hp["dataset"])
             if isnan(validation_loss) || isnan(validation_accuracy)
                 println("NaN value during validation")
-                println(logits)
                 continue
             end
             push!(losses, validation_loss)
@@ -77,7 +77,7 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
 
             loss, grads = Flux.withgradient(m -> criterion(m(x), y), model)
             if isnan(loss)
-                print("NaN value")
+                println("NaN value during Training")
                 model = best_model
                 continue
             end
