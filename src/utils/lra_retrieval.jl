@@ -174,4 +174,3 @@ function get_lra_retrieval(; seq_len = 4000, data_to_use_percent = 1, data_folde
 	)
 
 end
-
