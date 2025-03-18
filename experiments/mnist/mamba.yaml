@@ -1,19 +1,17 @@
-# total params: 
-# model params
 model_name: mamba
 dataset: mnist
 
 embed_dim: 64
 N: 8
 n_layers: 3
-dropout: [0.0, 0.1]
-ssm_dropout: [0.0, 0.1]
+dropout: 0.0
+ssm_dropout: 0.0
 
 train_batch_size: 64
 validation_batch_size: 64
 
 num_epochs: 100
-initial_lr: 1e-3
+initial_lr: 5e-4
 init_fin_lr_ratio: 0.1
 
 save_csv: false
@@ -22,6 +20,6 @@ save_model: false
 use_A_dropout: true
 use_cuda_scan: true
 
-num_iterations: 1
+num_iterations: 2
 
 input_dim: 2

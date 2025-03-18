@@ -256,15 +256,6 @@ function ChainRulesCore.rrule(::typeof(cuda_scan), X, Δ, A, B, C; K = 512)
 
 	function cuda_scan_pullback(w)
 		Y, (dX, dΔ, dA, dB, dC) = cuda_scan(X, Δ, A, B, C; K = K, compute_backward = true, w = w)
-
-		grad_clip = 1.0
-		# Clamp gradients element-wise
-		dX = clamp.(dX, -grad_clip, grad_clip)
-		dΔ = clamp.(dΔ, -grad_clip, grad_clip)
-		dA = clamp.(dA, -grad_clip, grad_clip)
-		dB = clamp.(dB, -grad_clip, grad_clip)
-		dC = clamp.(dC, -grad_clip, grad_clip)
-
 		return (NoTangent(), dX, dΔ, dA, dB, dC)
 	end
 

@@ -11,16 +11,17 @@ function get_dataloaders(dataset, device; p)
         vocab = nothing
 
     elseif dataset == "shakespeare"
-        vocab, trainX, trainY, testX, testY = get_tiny_shakespeare(seq_len = p["seq_len"], data_to_use_percent = p["data_to_use_percent"])
+        vocab, trainX, trainY, validationX, validationY = get_tiny_shakespeare(seq_len = p["seq_len"], data_to_use_percent = p["data_to_use_percent"])
 		train_loader = Flux.DataLoader((trainX, trainY), batchsize = p["train_batch_size"], shuffle = true, partial = false) |> device
-		validation_loader = Flux.DataLoader((testX, testY), batchsize = p["validation_batch_size"], shuffle = false, partial = false) |> device
+		validation_loader = Flux.DataLoader((validationX, validationY), batchsize = p["validation_batch_size"], shuffle = false, partial = false) |> device
 
     elseif dataset == "lra_retrieval"
         vocab, train_text_1, train_text_2, trainY, validation_text_1, validation_text_2, validationY =
-            get_lra_retrieval(data_to_use_percent=params["data_to_use_percent"], seq_len=params["seq_len"])
-
-        train_loader = Flux.DataLoader((train_text_1, train_text_2, trainY), batchsize=params["train_batch_size"], shuffle=true, partial=false) |> device
-        validation_loader = Flux.DataLoader((validation_text_1, validation_text_2, validationY), batchsize=params["validation_batch_size"], shuffle=false, partial=false) |> device
+            get_lra_retrieval(data_to_use_percent=p["data_to_use_percent"], seq_len=p["seq_len"])
+        trainX = (train_text_1, train_text_2)
+        validationX = (validation_text_1, validation_text_2)
+        train_loader = Flux.DataLoader((trainX, trainY), batchsize=p["train_batch_size"], shuffle=true, partial=false) |> device
+        validation_loader = Flux.DataLoader((validationX, validationY), batchsize=p["validation_batch_size"], shuffle=false, partial=false) |> device
     else
         error("$(p["dataset"]) is not a valid dataset name")
     end
