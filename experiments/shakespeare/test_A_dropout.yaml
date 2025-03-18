@@ -5,7 +5,7 @@ dataset: shakespeare
 
 embed_dim: 128
 N: 16
-n_layers: 6
+n_layers: 5
 dropout: 0.1
 ssm_dropout: 0.1
 # other hyperparameters
@@ -13,7 +13,7 @@ data_to_use_percent: 1.0
 train_batch_size: 64
 validation_batch_size: 64
 seq_len: 256
-num_epochs: 85
+num_epochs: 100
 initial_lr: 1e-3
 init_fin_lr_ratio: 0.1
 

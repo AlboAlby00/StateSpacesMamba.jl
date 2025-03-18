@@ -1,10 +1,24 @@
+using Pkg
+Pkg.activate(".")
+
 using Plots
 using Plots.PlotMeasures
 using Statistics
 using YAML
 using DelimitedFiles
+using ArgParse
 
-mlflow_experiment_folder = "mamba_all_dropout_search"
+s = ArgParseSettings()
+@add_arg_table s begin
+	"--name", "-n"
+		help = "experiment name that you want to plot"
+		arg_type = String
+		required = true
+end
+args = parse_args(s)
+
+
+mlflow_experiment_folder = "mamba__search"
 mkpath("images")
 
 colors = [:blue, :red, :green, :brown, :purple, :orange, :pink, :cyan, :magenta, :black, :white, :gray, :lime]
@@ -22,7 +36,7 @@ combined_plot = plot(
 	bottom_margin = 10mm,
 )
 
-subdirs = filter(isdir, readdir("mlruns/$(mlflow_experiment_folder)", join = true))
+subdirs = filter(isdir, readdir("mlruns/$(args["name"])", join = true))
 
 all_train_losses = Dict()
 all_validation_losses = Dict()
@@ -82,5 +96,6 @@ for (color_index, combination_name) in enumerate(keys(all_train_losses))
 
 end
 
-savefig(combined_plot, "images/mlflow_experiments/$(mlflow_experiment_folder)_loss_curve.png")
+mkpath("images/mlflow_experiments")
+savefig(combined_plot, "images/mlflow_experiments/$(args["name"])_loss_curve.png")
 
