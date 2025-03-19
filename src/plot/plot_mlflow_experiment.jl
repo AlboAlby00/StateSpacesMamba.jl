@@ -14,6 +14,10 @@ s = ArgParseSettings()
 		help = "experiment name that you want to plot"
 		arg_type = String
 		required = true
+	"--train"
+		help = "Flag for setting the 'ex' parameter to true"
+		arg_type = Bool
+		default = true
 end
 args = parse_args(s)
 
@@ -29,7 +33,7 @@ combined_plot = plot(
 	ylabel = "Loss",
 	legend = :topright,
 	linewidth = 2,
-	ylims = (1.0, 2.0),
+	ylims = (0.0, 0.2),
 	size = (1400, 800),
 	left_margin = 15mm,
 	right_margin = 20mm,
@@ -83,10 +87,14 @@ for (color_index, combination_name) in enumerate(keys(all_train_losses))
 	println("----------------------------------------")
 
 	# Plot the training and validation losses
-	plot!(combined_plot, 1:length(mean_train_loss), mean_train_loss, label = "$(combination_name) Training Loss", linestyle = :solid, color = colors[color_index])
+	if args["train"]
+		plot!(combined_plot, 1:length(mean_train_loss), mean_train_loss, label = "$(combination_name) Training Loss", linestyle = :solid, color = colors[color_index])
+	end
 
 	validation_steps = range(1, length(mean_train_loss), length = length(mean_validation_loss))
-	plot!(combined_plot, validation_steps, mean_validation_loss, ribbon = conf_test, label = "$(combination_name) Validation Loss", linestyle = :dash, color = colors[color_index])
+
+	validation_steps = range(1, length(mean_validation_loss), length = length(mean_validation_loss))
+	plot!(combined_plot, validation_steps, mean_validation_loss, ribbon = conf_test, label = "$(combination_name) Validation Loss", linestyle = :dash, color = colors[color_index])	
 
 	# Increment color index for the next plot
 	color_index += 1
@@ -98,4 +106,3 @@ end
 
 mkpath("images/mlflow_experiments")
 savefig(combined_plot, "images/mlflow_experiments/$(args["name"])_loss_curve.png")
-

@@ -25,7 +25,7 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
         end
     end
 
-    opt = Flux.Optimise.Optimiser(Flux.Optimise.ClipValue(1e-3), Flux.Optimise.Adam(hp["initial_lr"]))
+    opt = Flux.Optimise.Optimiser(Flux.Optimise.ClipGrad(1e-2), Flux.Optimise.Adam(hp["initial_lr"]))
     opt_state = Optimisers.setup(opt, model)
 
     best_model = deepcopy(model)
@@ -48,10 +48,14 @@ function train_and_evaluate(hp, train_loader, validation_loader, model, criterio
             logits = model(x) |> cpu
             validation_loss = criterion(logits, y)
             validation_accuracy = get_accuracy(logits, y, hp["dataset"])
-            if isnan(validation_loss) || isnan(validation_accuracy)
-                println("NaN value during validation")
+            if isnan(validation_loss)
+                println("NaN loss during validation")
                 model = best_model
                 continue
+            end
+            if isnan(validation_accuracy)
+                println("NaN accuracy during validation")
+                validation_accuracy = 0
             end
             push!(losses, validation_loss)
             push!(accuracies, validation_accuracy)
